@@ -9,6 +9,7 @@ A lightweight, real-time chat server for online games built with Node.js, WebSoc
 - ✅ **Lobby Chat** - Channel-based chat for game lobbies
 - ✅ **Lobby Invitations** - Invite friends to join your game
 - ✅ **Notifications** - Server-to-client push notifications
+- ✅ **Username Support** - Display names included in all messages (no extra queries needed)
 - ✅ **REST API** - HTTP endpoints for chat history and notifications
 - ✅ **Firebase Integration** - Persistent chat history with Firestore
 - ✅ **CORS Enabled** - Works with any client origin
@@ -16,6 +17,8 @@ A lightweight, real-time chat server for online games built with Node.js, WebSoc
 ---
 
 ## Quick Start
+
+> **Note:** Version 2.0 introduces username support. All clients must include `username` in authentication. See [CHANGELOG.md](./CHANGELOG.md) for migration details.
 
 ### Prerequisites
 - Node.js 16+ installed
@@ -249,10 +252,11 @@ See **[How_to_use.md](./How_to_use.md)** for complete Unity integration guide.
 WebSocket ws = new WebSocket("ws://your-server:3000");
 ws.Connect();
 
-// Authenticate
+// Authenticate (username required)
 string authMsg = JsonUtility.ToJson(new {
     action = "auth",
     userId = "player123",
+    username = "CoolPlayer123",
     friendIds = new string[] { "friend1", "friend2" }
 });
 ws.Send(authMsg);

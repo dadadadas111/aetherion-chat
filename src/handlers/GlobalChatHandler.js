@@ -19,10 +19,15 @@ class GlobalChatHandler {
       return { success: false, error: 'Message cannot be empty' };
     }
 
+    // Get sender info
+    const senderClient = this.connectionManager.getClient(senderId);
+    const senderName = senderClient?.username || 'Unknown';
+
     // Create message payload
     const messagePayload = {
       type: 'global_chat',
       senderId: senderId,
+      senderName: senderName,
       message: message,
       timestamp: new Date().toISOString()
     };
@@ -42,7 +47,7 @@ class GlobalChatHandler {
       }
     });
 
-    console.log(`Global chat from ${senderId} broadcasted to ${successCount} clients`);
+    console.log(`Global chat from ${senderId} (${senderName}) broadcasted to ${successCount} clients`);
     return { success: true, recipients: successCount };
   }
 }

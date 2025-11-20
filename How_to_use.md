@@ -35,21 +35,28 @@ ws.Connect();
 ```
 
 ### 2. Authenticate User
-**After connecting**, send an authentication message:
+**After connecting**, send an authentication message with both userId and username:
 
 ```json
 {
   "action": "auth",
   "userId": "player123",
+  "username": "CoolPlayer123",
   "friendIds": ["friend1", "friend2", "friend3"]
 }
 ```
+
+**Fields:**
+- `userId` (required): Unique user identifier from your game server
+- `username` (required): Display name that will appear in chat messages
+- `friendIds` (optional): Array of friend user IDs
 
 **Response:**
 ```json
 {
   "type": "auth_success",
   "userId": "player123",
+  "username": "CoolPlayer123",
   "timestamp": "2025-11-13T10:00:00.000Z"
 }
 ```
@@ -74,10 +81,13 @@ Broadcast a message to **all online players**.
 {
   "type": "global_chat",
   "senderId": "player123",
+  "senderName": "CoolPlayer123",
   "message": "Hello everyone!",
   "timestamp": "2025-11-13T10:00:00.000Z"
 }
 ```
+
+**Note:** Use `senderName` to display in your UI instead of `senderId`.
 
 ---
 
@@ -98,7 +108,9 @@ Send a private message to a friend. Messages are **saved to Firestore** for hist
 {
   "type": "friend_chat",
   "senderId": "player123",
+  "senderName": "CoolPlayer123",
   "recipientId": "friend1",
+  "recipientName": "BestFriend99",
   "message": "Hey friend!",
   "timestamp": "2025-11-13T10:00:00.000Z"
 }
@@ -109,11 +121,15 @@ Send a private message to a friend. Messages are **saved to Firestore** for hist
 {
   "type": "friend_chat_sent",
   "senderId": "player123",
+  "senderName": "CoolPlayer123",
   "recipientId": "friend1",
+  "recipientName": "BestFriend99",
   "message": "Hey friend!",
   "timestamp": "2025-11-13T10:00:00.000Z"
 }
 ```
+
+**Note:** Both sender and recipient names are included so you can display them in your UI without additional lookups.
 
 #### Get Friend Chat History (REST API)
 Use HTTP GET request to retrieve chat history with pagination support.
@@ -145,7 +161,9 @@ GET https://aetherion-chat.onrender.com/api/friend-chat/history?userId=player123
     {
       "id": "msg123",
       "senderId": "player123",
+      "senderName": "CoolPlayer123",
       "recipientId": "friend1",
+      "recipientName": "BestFriend99",
       "message": "Hey friend!",
       "timestamp": "2025-11-13T10:00:00.000Z",
       "read": false
@@ -154,6 +172,8 @@ GET https://aetherion-chat.onrender.com/api/friend-chat/history?userId=player123
   "count": 1
 }
 ```
+
+**Note:** Historical messages include usernames that were active when the message was sent.
 
 **Parameters:**
 - `userId` (required): Your user ID
@@ -230,6 +250,7 @@ After subscribing, you can send messages to all lobby members:
   "type": "lobby_chat",
   "lobbyId": "lobby_abc123",
   "senderId": "player123",
+  "senderName": "CoolPlayer123",
   "message": "Ready to start!",
   "timestamp": "2025-11-13T10:00:00.000Z"
 }
@@ -273,12 +294,15 @@ Invite friends to join your lobby. Only works if the recipient is **online**.
 {
   "type": "lobby_invite",
   "senderId": "player123",
+  "senderName": "CoolPlayer123",
   "lobbyCode": "ABC123",
   "lobbyName": "Epic Battle",
   "expiresAt": "2025-11-13T10:05:00.000Z",
   "timestamp": "2025-11-13T10:00:00.000Z"
 }
 ```
+
+**Note:** You can display "CoolPlayer123 invited you to Epic Battle" using the `senderName` and `lobbyName` fields.
 
 **Send Response (Accept/Decline):**
 ```json
@@ -295,11 +319,14 @@ Invite friends to join your lobby. Only works if the recipient is **online**.
 {
   "type": "lobby_invite_response",
   "responderId": "friend1",
+  "responderName": "BestFriend99",
   "lobbyCode": "ABC123",
   "accepted": true,
   "timestamp": "2025-11-13T10:00:30.000Z"
 }
 ```
+
+**Note:** Display "BestFriend99 accepted your invite" using `responderName` and `accepted` fields.
 
 **Note:** If the recipient is offline, you'll receive an error acknowledgment:
 ```json
@@ -526,6 +553,7 @@ public class ChatManager : MonoBehaviour
         var authMsg = new {
             action = "auth",
             userId = userId,
+            username = "CoolPlayer123",  // Add your display name
             friendIds = friendIds
         };
         ws.Send(JsonUtility.ToJson(authMsg));
@@ -543,12 +571,15 @@ public class ChatManager : MonoBehaviour
                 break;
             case "global_chat":
                 // Display in global chat UI
+                // Use msg.senderName for display
                 break;
             case "friend_chat":
                 // Display in friend chat UI
+                // Use msg.senderName and msg.recipientName
                 break;
             case "lobby_chat":
                 // Display in lobby chat UI
+                // Use msg.senderName for display
                 break;
             case "notification":
                 // Handle notification
@@ -644,7 +675,7 @@ Before implementing in Unity, test the server with a WebSocket client:
 
 **Test Authentication:**
 ```json
-{"action":"auth","userId":"test123","friendIds":[]}
+{"action":"auth","userId":"test123","username":"TestUser","friendIds":[]}
 ```
 
 **Test Global Chat:**
@@ -693,6 +724,11 @@ Before implementing in Unity, test the server with a WebSocket client:
 
 **"userId is required for authentication"**
 - Include `userId` field in your `auth` action
+- Ensure it's not null or empty
+
+**"username is required for authentication"**
+- Include `username` field in your `auth` action
+- This is the display name that will appear in all chat messages
 - Ensure it's not null or empty
 
 ---

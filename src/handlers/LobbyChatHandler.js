@@ -54,11 +54,14 @@ class LobbyChatHandler {
       return { success: false, error: 'You are not subscribed to this lobby' };
     }
 
+    const senderName = senderClient.username || 'Unknown';
+
     // Create message payload
     const messagePayload = {
       type: 'lobby_chat',
       lobbyId: lobbyId,
       senderId: senderId,
+      senderName: senderName,
       message: message,
       timestamp: new Date().toISOString()
     };
@@ -78,7 +81,7 @@ class LobbyChatHandler {
       }
     });
 
-    console.log(`Lobby chat from ${senderId} in lobby ${lobbyId} sent to ${successCount} clients`);
+    console.log(`Lobby chat from ${senderId} (${senderName}) in lobby ${lobbyId} sent to ${successCount} clients`);
     return { success: true, recipients: successCount };
   }
 }

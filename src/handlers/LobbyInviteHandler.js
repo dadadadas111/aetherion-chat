@@ -21,10 +21,15 @@ class LobbyInviteHandler {
       return { success: false, error: 'Lobby code is required' };
     }
 
+    // Get sender and recipient info
+    const senderClient = this.connectionManager.getClient(senderId);
+    const senderName = senderClient?.username || 'Unknown';
+
     // Create invite payload
     const invitePayload = {
       type: 'lobby_invite',
       senderId: senderId,
+      senderName: senderName,
       lobbyCode: lobbyCode,
       lobbyName: lobbyName || 'Game Lobby',
       expiresAt: expiresAt || new Date(Date.now() + 5 * 60 * 1000).toISOString(), // Default 5 min expiry
@@ -38,10 +43,12 @@ class LobbyInviteHandler {
       return { success: false, error: 'Recipient is offline', delivered: false };
     }
 
+    const recipientName = recipientClient.username || 'Unknown';
+
     try {
       if (recipientClient.ws.readyState === 1) { // WebSocket.OPEN
         recipientClient.ws.send(JSON.stringify(invitePayload));
-        console.log(`Lobby invite from ${senderId} to ${recipientId} (lobby: ${lobbyCode})`);
+        console.log(`Lobby invite from ${senderId} (${senderName}) to ${recipientId} (${recipientName}) (lobby: ${lobbyCode})`);
         return { success: true, delivered: true };
       } else {
         return { success: false, error: 'Recipient connection not ready', delivered: false };
@@ -66,10 +73,15 @@ class LobbyInviteHandler {
       return { success: false, error: 'Lobby code is required' };
     }
 
+    // Get responder info
+    const responderClient = this.connectionManager.getClient(responderId);
+    const responderName = responderClient?.username || 'Unknown';
+
     // Create response payload
     const responsePayload = {
       type: 'lobby_invite_response',
       responderId: responderId,
+      responderName: responderName,
       lobbyCode: lobbyCode,
       accepted: accepted === true,
       timestamp: new Date().toISOString()
@@ -82,10 +94,12 @@ class LobbyInviteHandler {
       return { success: false, error: 'Original sender is offline', delivered: false };
     }
 
+    const senderName = senderClient.username || 'Unknown';
+
     try {
       if (senderClient.ws.readyState === 1) {
         senderClient.ws.send(JSON.stringify(responsePayload));
-        console.log(`Invite response from ${responderId} to ${senderId}: ${accepted ? 'accepted' : 'declined'}`);
+        console.log(`Invite response from ${responderId} (${responderName}) to ${senderId} (${senderName}): ${accepted ? 'accepted' : 'declined'}`);
         return { success: true, delivered: true };
       } else {
         return { success: false, error: 'Sender connection not ready', delivered: false };

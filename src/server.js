@@ -51,6 +51,7 @@ wss.on('connection', (ws, req) => {
       // Handle authentication
       if (action === 'auth') {
         userId = data.userId;
+        const username = data.username;
         const friendIds = data.friendIds || [];
         
         if (!userId) {
@@ -61,16 +62,25 @@ wss.on('connection', (ws, req) => {
           return;
         }
 
-        connectionManager.addClient(ws, userId);
+        if (!username) {
+          ws.send(JSON.stringify({ 
+            type: 'error', 
+            error: 'username is required for authentication' 
+          }));
+          return;
+        }
+
+        connectionManager.addClient(ws, userId, username);
         connectionManager.setFriendList(userId, friendIds);
 
         ws.send(JSON.stringify({ 
           type: 'auth_success', 
           userId: userId,
+          username: username,
           timestamp: new Date().toISOString()
         }));
         
-        console.log(`User authenticated: ${userId}`);
+        console.log(`User authenticated: ${userId} (${username})`);
         return;
       }
 

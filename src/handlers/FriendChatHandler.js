@@ -26,11 +26,19 @@ class FriendChatHandler {
       return { success: false, error: 'Message cannot be empty' };
     }
 
+    // Get sender and recipient info
+    const senderClient = this.connectionManager.getClient(senderId);
+    const recipientClient = this.connectionManager.getClient(recipientId);
+    const senderName = senderClient?.username || 'Unknown';
+    const recipientName = recipientClient?.username || 'Unknown';
+
     // Create message payload
     const messagePayload = {
       type: 'friend_chat',
       senderId: senderId,
+      senderName: senderName,
       recipientId: recipientId,
+      recipientName: recipientName,
       message: message,
       timestamp: new Date().toISOString()
     };
@@ -38,26 +46,25 @@ class FriendChatHandler {
     // Save to Firestore if available
     if (this.firestore) {
       try {
-        await this.saveChatHistory(senderId, recipientId, message);
+        await this.saveChatHistory(senderId, senderName, recipientId, recipientName, message);
       } catch (error) {
         console.error('Error saving chat history:', error.message);
       }
     }
 
     // Send to recipient if online
-    const recipientClient = this.connectionManager.getClient(recipientId);
     let sent = false;
 
     if (recipientClient && recipientClient.ws.readyState === 1) {
       try {
         recipientClient.ws.send(JSON.stringify(messagePayload));
         sent = true;
-        console.log(`Friend chat from ${senderId} to ${recipientId} delivered`);
+        console.log(`Friend chat from ${senderId} (${senderName}) to ${recipientId} (${recipientName}) delivered`);
       } catch (error) {
         console.error(`Error sending to ${recipientId}:`, error.message);
       }
     } else {
-      console.log(`Recipient ${recipientId} is offline, message saved to history`);
+      console.log(`Recipient ${recipientId} (${recipientName}) is offline, message saved to history`);
     }
 
     // Also send confirmation back to sender
@@ -79,7 +86,7 @@ class FriendChatHandler {
   /**
    * Save chat message to Firestore
    */
-  async saveChatHistory(senderId, recipientId, message) {
+  async saveChatHistory(senderId, senderName, recipientId, recipientName, message) {
     if (!this.firestore) {
       throw new Error('Firestore not initialized');
     }
@@ -90,7 +97,9 @@ class FriendChatHandler {
     const chatDoc = {
       conversationId: conversationId,
       senderId: senderId,
+      senderName: senderName,
       recipientId: recipientId,
+      recipientName: recipientName,
       message: message,
       timestamp: new Date(),
       read: false
@@ -129,7 +138,9 @@ class FriendChatHandler {
       messages.push({
         id: doc.id,
         senderId: data.senderId,
+        senderName: data.senderName || 'Unknown',
         recipientId: data.recipientId,
+        recipientName: data.recipientName || 'Unknown',
         message: data.message,
         timestamp: data.timestamp.toDate().toISOString(),
         read: data.read || false

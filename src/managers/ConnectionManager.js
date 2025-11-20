@@ -13,15 +13,16 @@ class ConnectionManager {
   /**
    * Add a new client connection
    */
-  addClient(ws, userId) {
+  addClient(ws, userId, username) {
     this.clients.set(userId, {
       ws: ws,
       userId: userId,
+      username: username,
       friendIds: new Set(),
       lobbyId: null,
       connectedAt: new Date()
     });
-    console.log(`Client connected: ${userId}`);
+    console.log(`Client connected: ${userId} (${username})`);
   }
 
   /**
@@ -30,12 +31,13 @@ class ConnectionManager {
   removeClient(userId) {
     const client = this.clients.get(userId);
     if (client) {
+      const username = client.username || userId;
       // Remove from lobby channel if subscribed
       if (client.lobbyId) {
         this.unsubscribeFromLobby(userId);
       }
       this.clients.delete(userId);
-      console.log(`Client disconnected: ${userId}`);
+      console.log(`Client disconnected: ${userId} (${username})`);
     }
   }
 
@@ -75,7 +77,7 @@ class ConnectionManager {
     this.lobbyChannels.get(lobbyId).add(userId);
     client.lobbyId = lobbyId;
 
-    console.log(`User ${userId} subscribed to lobby ${lobbyId}`);
+    console.log(`User ${userId} (${client.username}) subscribed to lobby ${lobbyId}`);
     return true;
   }
 
@@ -97,7 +99,7 @@ class ConnectionManager {
     }
 
     client.lobbyId = null;
-    console.log(`User ${userId} unsubscribed from lobby ${lobbyId}`);
+    console.log(`User ${userId} (${client.username}) unsubscribed from lobby ${lobbyId}`);
   }
 
   /**
