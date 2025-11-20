@@ -68,7 +68,6 @@ class FriendChatHandler {
     }
 
     // Also send confirmation back to sender
-    const senderClient = this.connectionManager.getClient(senderId);
     if (senderClient && senderClient.ws.readyState === 1) {
       try {
         senderClient.ws.send(JSON.stringify({
