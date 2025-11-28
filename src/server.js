@@ -24,6 +24,7 @@ initializeFirebase();
 const connectionManager = new ConnectionManager();
 const playerStatusManager = new PlayerStatusManager();
 
+
 // Initialize Redis connection
 playerStatusManager.initialize().then(success => {
   if (success) {
