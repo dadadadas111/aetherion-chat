@@ -271,7 +271,10 @@ GET /api/stats
 Configure Redis connection with these environment variables:
 
 ```bash
-# Redis Configuration
+# Redis Configuration (Option 1: Connection String)
+REDIS_CONNECTION=host:port,password=xxx,ssl=True,abortConnect=False
+
+# Redis Configuration (Option 2: Individual settings - fallback if REDIS_CONNECTION not set)
 REDIS_HOST=localhost        # Redis server host
 REDIS_PORT=6379            # Redis server port  
 REDIS_PASSWORD=            # Redis password (optional)
@@ -280,6 +283,8 @@ REDIS_DB=0                 # Redis database number
 # Server Configuration
 PORT=3000                  # Server port
 ```
+
+**Note**: If `REDIS_CONNECTION` is provided, it takes precedence over individual Redis settings.
 
 ## Redis Data Structure
 
