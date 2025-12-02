@@ -73,6 +73,7 @@ wss.on('connection', (ws, req) => {
         userId = data.userId;
         const username = data.username;
         const friendIds = data.friendIds || [];
+        const characterId = data.characterId || null;
         
         if (!userId) {
           ws.send(JSON.stringify({ 
@@ -90,12 +91,12 @@ wss.on('connection', (ws, req) => {
           return;
         }
 
-        connectionManager.addClient(ws, userId, username);
+        connectionManager.addClient(ws, userId, username, characterId);
         connectionManager.setFriendList(userId, friendIds);
         
-        // Cache friend list in Redis and set initial online status
+        // Cache friend list in Redis and set initial online status with character
         await playerStatusManager.setPlayerFriends(userId, friendIds);
-        await playerStatusManager.setPlayerStatus(userId, 'online');
+        await playerStatusManager.setPlayerStatus(userId, 'online', null, characterId);
 
         ws.send(JSON.stringify({ 
           type: 'auth_success', 
@@ -142,6 +143,10 @@ wss.on('connection', (ws, req) => {
 
         case 'lobby_subscribe':
           result = lobbyChatHandler.handleSubscribe(data, userId);
+          // Send lobby roster to the joining user
+          if (result.success && data.lobbyId) {
+            lobbyEventsHandler.sendLobbyRoster(data.lobbyId, userId);
+          }
           break;
 
         case 'lobby_unsubscribe':

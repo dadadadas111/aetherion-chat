@@ -8,6 +8,7 @@ A lightweight, real-time chat server for online games built with Node.js, WebSoc
 - ✅ **Friend Chat** - Private messaging with history persistence
 - ✅ **Lobby Chat** - Channel-based chat for game lobbies
 - ✅ **Lobby Events** - Real-time lobby synchronization (queue, mode changes, host migration)
+- ✅ **Character Selection** - Track and sync player character/skin choices in lobbies
 - ✅ **Lobby Invitations** - Invite friends to join your game
 - ✅ **Notifications** - Server-to-client push notifications
 - ✅ **Player Status** - Online/offline/in-game status tracking with Redis
@@ -90,6 +91,7 @@ aetherion-chat/
 ├── How_to_use.md                    # Unity integration guide
 ├── FRIEND_STATUS_API.md             # Player status API documentation
 ├── WEBSOCKET_LOBBY_EVENTS_SPEC.md   # Lobby events specification
+├── CHARACTER_SELECTION_CHANGELOG.md # Character selection system docs
 └── README.md
 ```
 
@@ -324,6 +326,63 @@ All subscribed lobby members (except sender) receive:
 Run the included test script:
 ```bash
 node test-lobby-events.js
+```
+
+---
+
+## Character Selection System
+
+Players can register and update their character/skin selection, with automatic synchronization across lobby members. See **[CHARACTER_SELECTION_CHANGELOG.md](./CHARACTER_SELECTION_CHANGELOG.md)** for complete integration guide.
+
+### Key Features
+- ✅ Register character ID during authentication
+- ✅ Update character selection in real-time
+- ✅ Automatic lobby roster sent when joining (all members + characters)
+- ✅ Real-time `character_changed` events to lobby members
+- ✅ Character ID included in friend status updates
+
+### Quick Usage
+
+**Authentication with Character:**
+```json
+{
+  "action": "auth",
+  "userId": "player123",
+  "username": "CoolPlayer",
+  "characterId": "warrior_skin_01"
+}
+```
+
+**Update Character Selection:**
+```json
+{
+  "action": "update_status",
+  "status": "online",
+  "characterId": "mage_skin_03"
+}
+```
+
+**Receive Lobby Roster (on join):**
+```json
+{
+  "type": "lobby_event",
+  "eventType": "lobby_roster",
+  "members": [
+    {"userId": "player1", "username": "Name1", "characterId": "warrior_01"},
+    {"userId": "player2", "username": "Name2", "characterId": "mage_03"}
+  ]
+}
+```
+
+**Receive Character Changes:**
+```json
+{
+  "type": "lobby_event",
+  "eventType": "character_changed",
+  "userId": "player1",
+  "username": "Name1",
+  "characterId": "archer_05"
+}
 ```
 
 ---

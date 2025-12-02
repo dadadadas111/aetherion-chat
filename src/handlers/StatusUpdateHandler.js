@@ -12,7 +12,7 @@ class StatusUpdateHandler {
    */
   async handleStatusUpdate(data, userId) {
     try {
-      const { status, gameInfo } = data;
+      const { status, gameInfo, characterId } = data;
       
       if (!status) {
         return { 
@@ -31,7 +31,7 @@ class StatusUpdateHandler {
       }
 
       // Update player status in Redis
-      const success = await this.playerStatusManager.setPlayerStatus(userId, status, gameInfo);
+      const success = await this.playerStatusManager.setPlayerStatus(userId, status, gameInfo, characterId);
       
       if (!success) {
         return { 
@@ -40,8 +40,19 @@ class StatusUpdateHandler {
         };
       }
 
+      // Update character ID in connection manager
+      const client = this.connectionManager.getClient(userId);
+      if (client && characterId !== undefined) {
+        client.characterId = characterId;
+      }
+
+      // If user is in a lobby and character changed, notify lobby members
+      if (client && client.lobbyId && characterId !== undefined) {
+        await this.notifyLobbyOfCharacterChange(userId, client.lobbyId, characterId);
+      }
+
       // Get the user's friends and notify them about the status change
-      await this.notifyFriendsOfStatusChange(userId, status, gameInfo);
+      await this.notifyFriendsOfStatusChange(userId, status, gameInfo, characterId);
 
       return { 
         success: true, 
@@ -60,7 +71,7 @@ class StatusUpdateHandler {
   /**
    * Notify friends about status change
    */
-  async notifyFriendsOfStatusChange(userId, status, gameInfo = null) {
+  async notifyFriendsOfStatusChange(userId, status, gameInfo = null, characterId = null) {
     try {
       // Get the user's friend list from Redis cache
       const friendIds = await this.playerStatusManager.getPlayerFriends(userId);
@@ -80,6 +91,7 @@ class StatusUpdateHandler {
         friendUsername: username,
         status: status,
         gameInfo: gameInfo,
+        characterId: characterId,
         timestamp: new Date().toISOString()
       };
 
@@ -101,6 +113,51 @@ class StatusUpdateHandler {
       console.log(`Notified ${notifiedCount} friends about ${userId}'s status change to ${status}`);
     } catch (error) {
       console.error('Error notifying friends of status change:', error);
+    }
+  }
+
+  /**
+   * Notify lobby members about character change
+   */
+  async notifyLobbyOfCharacterChange(userId, lobbyId, characterId) {
+    try {
+      const userClient = this.connectionManager.getClient(userId);
+      const username = userClient ? userClient.username : userId;
+
+      // Prepare lobby event message
+      const lobbyEvent = {
+        type: 'lobby_event',
+        eventType: 'character_changed',
+        lobbyId: lobbyId,
+        userId: userId,
+        username: username,
+        characterId: characterId,
+        timestamp: new Date().toISOString()
+      };
+
+      // Get all clients in the lobby
+      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      let notifiedCount = 0;
+
+      lobbyClients.forEach(client => {
+        // Don't send back to the sender
+        if (client.userId === userId) {
+          return;
+        }
+
+        try {
+          if (client.ws.readyState === 1) { // WebSocket.OPEN
+            client.ws.send(JSON.stringify(lobbyEvent));
+            notifiedCount++;
+          }
+        } catch (error) {
+          console.error(`Error sending character change to client ${client.userId}:`, error);
+        }
+      });
+
+      console.log(`Notified ${notifiedCount} lobby members about ${userId}'s character change to ${characterId}`);
+    } catch (error) {
+      console.error('Error notifying lobby of character change:', error);
     }
   }
 

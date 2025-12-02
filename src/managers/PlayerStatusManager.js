@@ -71,27 +71,26 @@ class PlayerStatusManager {
         return this.redisClient && this.redisClient.isOpen;
     }
 
-    /**
-     * Set player status
-     */
-    async setPlayerStatus(userId, status, gameInfo = null) {
-        if (!this.isRedisAvailable()) {
-            console.warn('Redis not available, skipping status update');
-            return false;
-        }
+  /**
+   * Set player status
+   */
+  async setPlayerStatus(userId, status, gameInfo = null, characterId = null) {
+    if (!this.isRedisAvailable()) {
+      console.warn('Redis not available, skipping status update');
+      return false;
+    }
 
-        if (!Object.values(this.STATUS).includes(status)) {
-            throw new Error(`Invalid status: ${status}`);
-        }
+    if (!Object.values(this.STATUS).includes(status)) {
+      throw new Error(`Invalid status: ${status}`);
+    }
 
-        try {
-            const statusData = {
-                status: status,
-                lastSeen: new Date().toISOString(),
-                gameInfo: gameInfo
-            };
-
-            await this.redisClient.setEx(
+    try {
+      const statusData = {
+        status: status,
+        lastSeen: new Date().toISOString(),
+        gameInfo: gameInfo,
+        characterId: characterId
+      };            await this.redisClient.setEx(
                 `${this.REDIS_KEYS.PLAYER_STATUS}${userId}`,
                 this.STATUS_TTL,
                 JSON.stringify(statusData)
@@ -108,26 +107,24 @@ class PlayerStatusManager {
     /**
      * Get player status
      */
-    async getPlayerStatus(userId) {
-        if (!this.isRedisAvailable()) {
-            return { status: this.STATUS.OFFLINE, lastSeen: null, gameInfo: null };
-        }
-
-        try {
-            const statusData = await this.redisClient.get(`${this.REDIS_KEYS.PLAYER_STATUS}${userId}`);
-
-            if (!statusData) {
-                return { status: this.STATUS.OFFLINE, lastSeen: null, gameInfo: null };
-            }
-
-            return JSON.parse(statusData);
-        } catch (error) {
-            console.error('Error getting player status:', error);
-            return { status: this.STATUS.OFFLINE, lastSeen: null, gameInfo: null };
-        }
+  async getPlayerStatus(userId) {
+    if (!this.isRedisAvailable()) {
+      return { status: this.STATUS.OFFLINE, lastSeen: null, gameInfo: null, characterId: null };
     }
 
-    /**
+    try {
+      const statusData = await this.redisClient.get(`${this.REDIS_KEYS.PLAYER_STATUS}${userId}`);
+      
+      if (!statusData) {
+        return { status: this.STATUS.OFFLINE, lastSeen: null, gameInfo: null, characterId: null };
+      }
+
+      return JSON.parse(statusData);
+    } catch (error) {
+      console.error('Error getting player status:', error);
+      return { status: this.STATUS.OFFLINE, lastSeen: null, gameInfo: null, characterId: null };
+    }
+  }    /**
      * Get multiple players status
      */
     async getMultiplePlayerStatus(userIds) {
@@ -147,10 +144,10 @@ class PlayerStatusManager {
                         result[userId] = JSON.parse(statusData);
                     } catch (parseError) {
                         console.error(`Error parsing status for user ${userId}:`, parseError);
-                        result[userId] = { status: this.STATUS.OFFLINE, lastSeen: null, gameInfo: null };
+                        result[userId] = { status: this.STATUS.OFFLINE, lastSeen: null, gameInfo: null, characterId: null };
                     }
                 } else {
-                    result[userId] = { status: this.STATUS.OFFLINE, lastSeen: null, gameInfo: null };
+                    result[userId] = { status: this.STATUS.OFFLINE, lastSeen: null, gameInfo: null, characterId: null };
                 }
             });
 

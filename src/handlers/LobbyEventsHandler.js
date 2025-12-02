@@ -90,6 +90,46 @@ class LobbyEventsHandler {
   }
 
   /**
+   * Send lobby roster to a specific user (when they join)
+   * Contains all lobby members with their character selections
+   */
+  sendLobbyRoster(lobbyId, recipientUserId) {
+    try {
+      // Get all clients in the lobby
+      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      
+      // Build roster with all member info
+      const members = lobbyClients.map(client => ({
+        userId: client.userId,
+        username: client.username,
+        characterId: client.characterId || null
+      }));
+
+      // Create roster event payload
+      const rosterEvent = {
+        type: 'lobby_event',
+        eventType: 'lobby_roster',
+        lobbyId: lobbyId,
+        members: members,
+        timestamp: new Date().toISOString()
+      };
+
+      // Send to the recipient
+      const recipientClient = this.connectionManager.getClient(recipientUserId);
+      if (recipientClient && recipientClient.ws.readyState === 1) {
+        recipientClient.ws.send(JSON.stringify(rosterEvent));
+        console.log(`Sent lobby roster to ${recipientUserId} for lobby ${lobbyId} (${members.length} members)`);
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error(`Error sending lobby roster to ${recipientUserId}:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Handle start queue event
    */
   handleStartQueue(data, senderId) {

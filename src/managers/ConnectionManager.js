@@ -13,11 +13,12 @@ class ConnectionManager {
   /**
    * Add a new client connection
    */
-  addClient(ws, userId, username) {
+  addClient(ws, userId, username, characterId = null) {
     this.clients.set(userId, {
       ws: ws,
       userId: userId,
       username: username,
+      characterId: characterId,
       friendIds: new Set(),
       lobbyId: null,
       connectedAt: new Date()
