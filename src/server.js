@@ -16,6 +16,7 @@ const LobbyChatHandler = require('./handlers/LobbyChatHandler');
 const NotificationHandler = require('./handlers/NotificationHandler');
 const LobbyInviteHandler = require('./handlers/LobbyInviteHandler');
 const StatusUpdateHandler = require('./handlers/StatusUpdateHandler');
+const LobbyEventsHandler = require('./handlers/LobbyEventsHandler');
 
 // Initialize Firebase
 initializeFirebase();
@@ -54,6 +55,7 @@ const lobbyChatHandler = new LobbyChatHandler(connectionManager);
 const notificationHandler = new NotificationHandler(connectionManager);
 const lobbyInviteHandler = new LobbyInviteHandler(connectionManager);
 const statusUpdateHandler = new StatusUpdateHandler(connectionManager, playerStatusManager);
+const lobbyEventsHandler = new LobbyEventsHandler(connectionManager);
 
 // WebSocket connection handler
 wss.on('connection', (ws, req) => {
@@ -158,6 +160,22 @@ wss.on('connection', (ws, req) => {
           result = lobbyInviteHandler.handleInviteResponse(data, userId);
           break;
 
+        case 'lobby_start_queue':
+          result = lobbyEventsHandler.handleStartQueue(data, userId);
+          break;
+
+        case 'lobby_stop_queue':
+          result = lobbyEventsHandler.handleStopQueue(data, userId);
+          break;
+
+        case 'lobby_change_mode':
+          result = lobbyEventsHandler.handleChangeMode(data, userId);
+          break;
+
+        case 'lobby_change_host':
+          result = lobbyEventsHandler.handleChangeHost(data, userId);
+          break;
+
         case 'ping':
           result = { type: 'pong', timestamp: new Date().toISOString() };
           ws.send(JSON.stringify(result));
@@ -190,6 +208,8 @@ wss.on('connection', (ws, req) => {
       // Handle player going offline
       await statusUpdateHandler.handlePlayerOffline(userId);
       connectionManager.removeClient(userId);
+      // Clean up lobby event rate limiting
+      lobbyEventsHandler.cleanupRateLimit(userId);
     }
     console.log('WebSocket connection closed');
   });

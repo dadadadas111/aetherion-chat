@@ -7,8 +7,10 @@ A lightweight, real-time chat server for online games built with Node.js, WebSoc
 - ✅ **Global Chat** - Broadcast messages to all connected players
 - ✅ **Friend Chat** - Private messaging with history persistence
 - ✅ **Lobby Chat** - Channel-based chat for game lobbies
+- ✅ **Lobby Events** - Real-time lobby synchronization (queue, mode changes, host migration)
 - ✅ **Lobby Invitations** - Invite friends to join your game
 - ✅ **Notifications** - Server-to-client push notifications
+- ✅ **Player Status** - Online/offline/in-game status tracking with Redis
 - ✅ **Username Support** - Display names included in all messages (no extra queries needed)
 - ✅ **REST API** - HTTP endpoints for chat history and notifications
 - ✅ **Firebase Integration** - Persistent chat history with Firestore
@@ -72,16 +74,22 @@ aetherion-chat/
 │   ├── config/
 │   │   └── firebase.js              # Firebase configuration
 │   ├── managers/
-│   │   └── ConnectionManager.js     # Client connection management
+│   │   ├── ConnectionManager.js     # Client connection management
+│   │   └── PlayerStatusManager.js   # Redis-based status tracking
 │   └── handlers/
 │       ├── GlobalChatHandler.js     # Global chat logic
 │       ├── FriendChatHandler.js     # Friend chat + Firestore
 │       ├── LobbyChatHandler.js      # Lobby chat channels
+│       ├── LobbyEventsHandler.js    # Lobby event broadcasting
 │       ├── LobbyInviteHandler.js    # Lobby invitations
+│       ├── StatusUpdateHandler.js   # Player status updates
 │       └── NotificationHandler.js   # Push notifications
 ├── package.json
 ├── .env
+├── .env.example                     # Environment variables template
 ├── How_to_use.md                    # Unity integration guide
+├── FRIEND_STATUS_API.md             # Player status API documentation
+├── WEBSOCKET_LOBBY_EVENTS_SPEC.md   # Lobby events specification
 └── README.md
 ```
 
@@ -126,8 +134,14 @@ Real-time bidirectional communication. See [How_to_use.md](./How_to_use.md) for 
 - `lobby_subscribe` - Join lobby channel
 - `lobby_unsubscribe` - Leave lobby channel
 - `lobby_chat` - Send lobby message
+- `lobby_start_queue` - Notify lobby members queue started
+- `lobby_stop_queue` - Notify lobby members queue stopped
+- `lobby_change_mode` - Notify lobby members game mode changed
+- `lobby_change_host` - Notify lobby members host changed
 - `lobby_invite` - Send lobby invitation
 - `lobby_invite_response` - Respond to invitation
+- `update_status` - Update player online/offline/in-game status
+- `update_friend_list` - Update cached friend list
 - `ping` - Keep-alive
 
 ### REST API (http://localhost:3000)
@@ -240,6 +254,77 @@ NODE_ENV=production
 - **DigitalOcean**: VPS with full control
 - **AWS EC2**: Scalable cloud hosting
 - **Google Cloud Run**: Serverless container hosting
+
+---
+
+## Lobby Events System
+
+The server provides real-time lobby synchronization for matchmaking queue, game mode changes, and host migration. See **[WEBSOCKET_LOBBY_EVENTS_SPEC.md](./WEBSOCKET_LOBBY_EVENTS_SPEC.md)** for complete specification.
+
+### Event Types
+
+**Start Queue** - Host notifies members that matchmaking started
+```json
+{
+  "action": "lobby_start_queue",
+  "lobbyId": "ABC123",
+  "gameMode": "Casual"
+}
+```
+
+**Stop Queue** - Any member can cancel matchmaking
+```json
+{
+  "action": "lobby_stop_queue",
+  "lobbyId": "ABC123"
+}
+```
+
+**Change Mode** - Host changes game mode
+```json
+{
+  "action": "lobby_change_mode",
+  "lobbyId": "ABC123",
+  "gameMode": "Ranked"
+}
+```
+
+**Change Host** - Host migration (future feature)
+```json
+{
+  "action": "lobby_change_host",
+  "lobbyId": "ABC123",
+  "newHostId": "player456"
+}
+```
+
+### Receiving Lobby Events
+
+All subscribed lobby members (except sender) receive:
+```json
+{
+  "type": "lobby_event",
+  "eventType": "start_queue",
+  "lobbyId": "ABC123",
+  "senderId": "player123",
+  "senderName": "PlayerOne",
+  "gameMode": "Casual",
+  "timestamp": "2025-12-02T10:30:00Z"
+}
+```
+
+### Features
+- ✅ Broadcast to all lobby members except sender
+- ✅ Automatic validation of lobby subscription
+- ✅ Rate limiting (10 events per minute per user)
+- ✅ Support for multiple independent lobbies
+- ✅ Automatic cleanup on disconnect
+
+### Testing
+Run the included test script:
+```bash
+node test-lobby-events.js
+```
 
 ---
 
