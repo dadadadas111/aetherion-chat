@@ -92,7 +92,29 @@ public class CharacterChangedEvent
 
 ---
 
-### 5. Update Message Router ✓
+### 5. Handle Member Left (NEW) ✓
+```csharp
+// Received when someone disconnects from lobby
+void HandleMemberLeft(string json)
+{
+    var evt = JsonUtility.FromJson<MemberLeftEvent>(json);
+    
+    RemoveMemberFromUI(evt.userId);
+}
+
+[Serializable]
+public class MemberLeftEvent
+{
+    public string type;         // "lobby_event"
+    public string eventType;    // "member_left"
+    public string userId;
+    public string username;
+}
+```
+
+---
+
+### 6. Update Message Router ✓
 ```csharp
 void OnWebSocketMessage(string message)
 {
@@ -112,6 +134,10 @@ void OnWebSocketMessage(string message)
                 HandleCharacterChanged(message);
                 break;
                 
+            case "member_left":
+                HandleMemberLeft(message);
+                break;
+                
             // ... existing cases
         }
     }
@@ -127,6 +153,7 @@ void OnWebSocketMessage(string message)
 - [ ] Changing character sends update_status with characterId
 - [ ] Other lobby members receive character_changed event
 - [ ] New member joining sees current characters
+- [ ] Member disconnecting triggers member_left event
 - [ ] Null characterIds handled gracefully
 
 ---

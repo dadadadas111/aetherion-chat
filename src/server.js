@@ -210,6 +210,16 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', async () => {
     if (userId) {
+      // Get client info before removing
+      const client = connectionManager.getClient(userId);
+      const wasInLobby = client?.lobbyId;
+      const username = client?.username || userId;
+      
+      // If player was in a lobby, notify other members they left
+      if (wasInLobby) {
+        lobbyEventsHandler.broadcastMemberLeft(wasInLobby, userId, username);
+      }
+      
       // Handle player going offline
       await statusUpdateHandler.handlePlayerOffline(userId);
       connectionManager.removeClient(userId);

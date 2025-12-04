@@ -132,7 +132,34 @@ Populate the lobby UI with all members and their selected characters.
 
 ---
 
-### 5. Friend Status - Character ID Included
+### 5. NEW Lobby Event: Member Left
+
+**Event Type:** `member_left`
+
+**Received By:** All remaining lobby members (when someone disconnects)
+
+**Payload:**
+```json
+{
+  "type": "lobby_event",
+  "eventType": "member_left",
+  "lobbyId": "ABC123",
+  "userId": "player123",
+  "username": "CoolPlayer",
+  "timestamp": "2025-12-02T10:30:00Z"
+}
+```
+
+**When Fired:**
+- Automatically sent when a player disconnects from the server while in a lobby
+- All remaining lobby members receive this event
+
+**Unity Client Action:**
+Remove the player from the lobby UI.
+
+---
+
+### 6. Friend Status - Character ID Included
 
 **Message Type:** `friend_status_changed`
 
@@ -277,7 +304,38 @@ public class CharacterChangedEvent
 
 ---
 
-### Step 5: Update Message Router
+### Step 5: Handle Member Left Events
+
+Remove player from lobby UI when they disconnect:
+
+```csharp
+void HandleMemberLeft(MemberLeftEvent evt)
+{
+    // Remove the lobby member from UI
+    RemoveLobbyMember(evt.userId);
+    
+    // Optional: Show notification
+    ShowNotification($"{evt.username} left the lobby");
+}
+```
+
+**Member Left Event Structure:**
+```csharp
+[System.Serializable]
+public class MemberLeftEvent
+{
+    public string type;        // "lobby_event"
+    public string eventType;   // "member_left"
+    public string lobbyId;
+    public string userId;
+    public string username;
+    public string timestamp;
+}
+```
+
+---
+
+### Step 6: Update Message Router
 
 Add handlers for the new event types:
 
@@ -298,6 +356,10 @@ void OnWebSocketMessage(string message)
                 
             case "character_changed":
                 HandleCharacterChanged(JsonUtility.FromJson<CharacterChangedEvent>(message));
+                break;
+                
+            case "member_left":
+                HandleMemberLeft(JsonUtility.FromJson<MemberLeftEvent>(message));
                 break;
                 
             // ... existing cases (start_queue, stop_queue, etc.)
@@ -377,6 +439,7 @@ void OnWebSocketMessage(string message)
 |------------|---------------|----------|
 | `lobby_roster` | Join lobby | All members + characters |
 | `character_changed` | Member changes character | userId + new characterId |
+| `member_left` | Member disconnects | userId + username |
 
 ### Updated Event Types
 

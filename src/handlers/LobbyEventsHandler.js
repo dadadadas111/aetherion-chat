@@ -303,6 +303,44 @@ class LobbyEventsHandler {
   }
 
   /**
+   * Broadcast when a member leaves the lobby (disconnect)
+   */
+  broadcastMemberLeft(lobbyId, userId, username) {
+    try {
+      // Create member left event payload
+      const memberLeftEvent = {
+        type: 'lobby_event',
+        eventType: 'member_left',
+        lobbyId: lobbyId,
+        userId: userId,
+        username: username,
+        timestamp: new Date().toISOString()
+      };
+
+      // Get all remaining clients in the lobby
+      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      let notifiedCount = 0;
+
+      lobbyClients.forEach(client => {
+        try {
+          if (client.ws.readyState === 1) { // WebSocket.OPEN
+            client.ws.send(JSON.stringify(memberLeftEvent));
+            notifiedCount++;
+          }
+        } catch (error) {
+          console.error(`Error sending member_left to client ${client.userId}:`, error.message);
+        }
+      });
+
+      console.log(`Notified ${notifiedCount} lobby members that ${userId} (${username}) left lobby ${lobbyId}`);
+      return notifiedCount;
+    } catch (error) {
+      console.error('Error broadcasting member left:', error);
+      return 0;
+    }
+  }
+
+  /**
    * Clean up rate limit tracking for disconnected users
    */
   cleanupRateLimit(userId) {
