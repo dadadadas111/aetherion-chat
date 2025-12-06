@@ -24,7 +24,22 @@ class LobbyEventsHandler {
     }
 
     try {
-      // Add to Redis
+      // If user is already in another lobby, leave it first
+      const oldLobbyId = client.lobbyId;
+      if (oldLobbyId && oldLobbyId !== lobbyId) {
+        console.log(`User ${userId} leaving old lobby ${oldLobbyId} before joining ${lobbyId}`);
+        
+        // Remove from old lobby in Redis
+        await this.lobbyManager.removeMember(oldLobbyId, userId);
+        
+        // Notify old lobby members
+        this.broadcastMemberLeft(oldLobbyId, userId, client.username);
+        
+        // Broadcast updated roster to old lobby
+        await this.broadcastLobbyRoster(oldLobbyId);
+      }
+      
+      // Add to new lobby in Redis
       await this.lobbyManager.addMember(
         lobbyId, 
         userId, 
@@ -35,7 +50,7 @@ class LobbyEventsHandler {
       // Update connection manager
       this.connectionManager.subscribeToLobby(userId, lobbyId);
 
-      // Broadcast updated roster to ALL members
+      // Broadcast updated roster to new lobby members
       await this.broadcastLobbyRoster(lobbyId);
 
       return { 
