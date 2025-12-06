@@ -323,6 +323,7 @@ All subscribed lobby members (except sender) receive:
 - ✅ Support for multiple independent lobbies
 - ✅ Automatic cleanup on disconnect
 - ✅ Member disconnect notifications to remaining lobby members
+- ✅ Periodic roster sync (every 10 seconds) to keep all clients updated
 
 ### Testing
 Run the included test script:
@@ -364,7 +365,7 @@ Players can register and update their character/skin selection, with automatic s
 }
 ```
 
-**Receive Lobby Roster (on join):**
+**Receive Lobby Roster:**
 ```json
 {
   "type": "lobby_event",
@@ -375,6 +376,10 @@ Players can register and update their character/skin selection, with automatic s
   ]
 }
 ```
+Roster is sent when:
+- Someone joins the lobby (to all members)
+- Someone leaves the lobby (to remaining members)  
+- Every 10 seconds (automatic sync)
 
 **Receive Character Changes:**
 ```json

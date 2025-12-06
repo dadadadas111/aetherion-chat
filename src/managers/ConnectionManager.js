@@ -151,6 +151,13 @@ class ConnectionManager {
   }
 
   /**
+   * Get all active lobby IDs
+   */
+  getAllLobbies() {
+    return Array.from(this.lobbyChannels.keys());
+  }
+
+  /**
    * Get connection statistics
    */
   getStats() {

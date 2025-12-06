@@ -124,11 +124,13 @@ Update the UI to show the new character selection for that player.
 ```
 
 **When Fired:**
-- Automatically sent when a player successfully subscribes to a lobby (`lobby_subscribe`)
+- When a player successfully subscribes to a lobby (`lobby_subscribe`) - sent to ALL members
+- When a player leaves the lobby (`lobby_member_left`) - sent to remaining members
+- Periodically every 10 seconds to all lobby members (automatic sync)
 - Contains all current lobby members and their character selections
 
 **Unity Client Action:**
-Populate the lobby UI with all members and their selected characters.
+Update/populate the lobby UI with all members and their selected characters. This event ensures all clients stay synchronized.
 
 ---
 

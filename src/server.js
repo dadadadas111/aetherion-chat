@@ -143,9 +143,9 @@ wss.on('connection', (ws, req) => {
 
         case 'lobby_subscribe':
           result = lobbyChatHandler.handleSubscribe(data, userId);
-          // Send lobby roster to the joining user
+          // Broadcast updated roster to ALL lobby members (including new joiner)
           if (result.success && data.lobbyId) {
-            lobbyEventsHandler.sendLobbyRoster(data.lobbyId, userId);
+            lobbyEventsHandler.sendLobbyRoster(data.lobbyId);
           }
           break;
 
@@ -477,9 +477,20 @@ server.listen(WS_PORT, () => {
   console.log(`===========================================`);
 });
 
+// Periodic lobby roster broadcast (every 10 seconds)
+const ROSTER_SYNC_INTERVAL = 10000; // 10 seconds
+const rosterSyncTimer = setInterval(() => {
+  lobbyEventsHandler.broadcastAllLobbyRosters();
+}, ROSTER_SYNC_INTERVAL);
+
+console.log(`Lobby roster sync enabled (every ${ROSTER_SYNC_INTERVAL / 1000} seconds)`);
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM signal received: closing server');
+  
+  // Clear roster sync timer
+  clearInterval(rosterSyncTimer);
   
   // Close Redis connection
   try {
@@ -496,6 +507,9 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT signal received: closing server');
+  
+  // Clear roster sync timer
+  clearInterval(rosterSyncTimer);
   
   // Close Redis connection
   try {

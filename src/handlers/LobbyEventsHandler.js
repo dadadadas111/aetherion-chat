@@ -90,14 +90,18 @@ class LobbyEventsHandler {
   }
 
   /**
-   * Send lobby roster to a specific user (when they join)
+   * Send lobby roster to all members in the lobby
    * Contains all lobby members with their character selections
    */
-  sendLobbyRoster(lobbyId, recipientUserId) {
+  sendLobbyRoster(lobbyId, recipientUserId = null) {
     try {
       // Get all clients in the lobby
       const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
       
+      if (lobbyClients.length === 0) {
+        return false;
+      }
+
       // Build roster with all member info
       const members = lobbyClients.map(client => ({
         userId: client.userId,
@@ -114,18 +118,57 @@ class LobbyEventsHandler {
         timestamp: new Date().toISOString()
       };
 
-      // Send to the recipient
-      const recipientClient = this.connectionManager.getClient(recipientUserId);
-      if (recipientClient && recipientClient.ws.readyState === 1) {
-        recipientClient.ws.send(JSON.stringify(rosterEvent));
-        console.log(`Sent lobby roster to ${recipientUserId} for lobby ${lobbyId} (${members.length} members)`);
-        return true;
+      const rosterJson = JSON.stringify(rosterEvent);
+      let sentCount = 0;
+
+      // Send to specific recipient or all members
+      if (recipientUserId) {
+        const recipientClient = this.connectionManager.getClient(recipientUserId);
+        if (recipientClient && recipientClient.ws.readyState === 1) {
+          recipientClient.ws.send(rosterJson);
+          sentCount = 1;
+          console.log(`Sent lobby roster to ${recipientUserId} for lobby ${lobbyId} (${members.length} members)`);
+        }
+      } else {
+        // Broadcast to all lobby members
+        lobbyClients.forEach(client => {
+          try {
+            if (client.ws.readyState === 1) {
+              client.ws.send(rosterJson);
+              sentCount++;
+            }
+          } catch (error) {
+            console.error(`Error sending roster to ${client.userId}:`, error.message);
+          }
+        });
+        console.log(`Broadcast lobby roster for ${lobbyId} to ${sentCount} members (${members.length} in roster)`);
       }
 
-      return false;
+      return sentCount > 0;
     } catch (error) {
-      console.error(`Error sending lobby roster to ${recipientUserId}:`, error);
+      console.error(`Error sending lobby roster:`, error);
       return false;
+    }
+  }
+
+  /**
+   * Broadcast roster to all lobbies (periodic sync)
+   */
+  broadcastAllLobbyRosters() {
+    try {
+      const lobbies = this.connectionManager.getAllLobbies();
+      let lobbyCount = 0;
+
+      lobbies.forEach(lobbyId => {
+        const success = this.sendLobbyRoster(lobbyId);
+        if (success) lobbyCount++;
+      });
+
+      if (lobbyCount > 0) {
+        console.log(`Periodic roster sync: updated ${lobbyCount} lobbies`);
+      }
+    } catch (error) {
+      console.error('Error in periodic roster broadcast:', error);
     }
   }
 
@@ -326,6 +369,9 @@ class LobbyEventsHandler {
 
     // Unsubscribe the sender from the lobby
     this.connectionManager.unsubscribeFromLobby(senderId);
+
+    // Send updated roster to remaining members
+    this.sendLobbyRoster(lobbyId);
 
     return {
       success: true,
