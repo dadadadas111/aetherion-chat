@@ -1,392 +1,165 @@
 /**
- * LobbyEventsHandler - Handles lobby events (queue, mode changes, host changes)
- * Broadcasts events to all subscribed lobby members except the sender
+ * LobbyEventsHandler - Handles lobby events with Redis as source of truth
+ * All lobby state stored in Redis, broadcasts sync'd data to members
  */
 class LobbyEventsHandler {
-  constructor(connectionManager) {
+  constructor(connectionManager, lobbyManager) {
     this.connectionManager = connectionManager;
-    
-    // Event type constants
-    this.EVENT_TYPES = {
-      START_QUEUE: 'start_queue',
-      STOP_QUEUE: 'stop_queue',
-      CHANGE_MODE: 'change_mode',
-      CHANGE_HOST: 'change_host'
-    };
-
-    // Valid game modes
-    this.GAME_MODES = ['Casual', 'Ranked', 'Custom'];
-
-    // Rate limiting: track events per user
-    this.eventCounts = new Map(); // userId -> { count, resetTime }
-    this.RATE_LIMIT = 10; // Max events per minute
-    this.RATE_WINDOW = 60 * 1000; // 1 minute
+    this.lobbyManager = lobbyManager;
   }
 
   /**
-   * Check rate limit for a user
+   * Handle user joining lobby
    */
-  checkRateLimit(userId) {
-    const now = Date.now();
-    const userLimit = this.eventCounts.get(userId);
+  async handleJoinLobby(data, userId) {
+    const { lobbyId } = data;
 
-    if (!userLimit || now > userLimit.resetTime) {
-      // Reset or initialize
-      this.eventCounts.set(userId, {
-        count: 1,
-        resetTime: now + this.RATE_WINDOW
-      });
-      return true;
+    if (!lobbyId) {
+      return { success: false, error: 'Lobby ID is required' };
     }
 
-    if (userLimit.count >= this.RATE_LIMIT) {
-      return false;
+    const client = this.connectionManager.getClient(userId);
+    if (!client) {
+      return { success: false, error: 'Client not found' };
     }
 
-    userLimit.count++;
-    return true;
-  }
-
-  /**
-   * Broadcast lobby event to all subscribed members except sender
-   */
-  broadcastLobbyEvent(lobbyId, senderId, eventType, additionalData = {}) {
-    const senderClient = this.connectionManager.getClient(senderId);
-    const senderName = senderClient?.username || 'Unknown';
-
-    // Create event payload
-    const eventPayload = {
-      type: 'lobby_event',
-      timestamp: new Date().toISOString(),
-      eventType: eventType,
-      lobbyId: lobbyId,
-      senderId: senderId,
-      senderName: senderName,
-      ...additionalData
-    };
-
-    // Get all clients in the lobby
-    const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
-    let successCount = 0;
-
-    lobbyClients.forEach(client => {
-      // Don't send back to sender
-      if (client.userId === senderId) {
-        return;
-      }
-
-      try {
-        if (client.ws.readyState === 1) { // WebSocket.OPEN
-          client.ws.send(JSON.stringify(eventPayload));
-          successCount++;
-        }
-      } catch (error) {
-        console.error(`Error sending lobby event to client ${client.userId}:`, error.message);
-      }
-    });
-
-    console.log(`Lobby event "${eventType}" from ${senderId} (${senderName}) in lobby ${lobbyId} sent to ${successCount} members`);
-    return successCount;
-  }
-
-  /**
-   * Send lobby roster to all members in the lobby
-   * Contains all lobby members with their character selections
-   */
-  sendLobbyRoster(lobbyId, recipientUserId = null) {
     try {
-      // Get all clients in the lobby
-      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      // Add to Redis
+      await this.lobbyManager.addMember(
+        lobbyId, 
+        userId, 
+        client.username, 
+        client.characterId
+      );
+
+      // Update connection manager
+      this.connectionManager.subscribeToLobby(userId, lobbyId);
+
+      // Broadcast updated roster to ALL members
+      await this.broadcastLobbyRoster(lobbyId);
+
+      return { 
+        success: true, 
+        lobbyId: lobbyId 
+      };
+    } catch (error) {
+      console.error('Error handling join lobby:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Handle user leaving lobby
+   */
+  async handleLeaveLobby(data, userId) {
+    const { lobbyId } = data;
+
+    if (!lobbyId) {
+      return { success: false, error: 'Lobby ID is required' };
+    }
+
+    try {
+      const client = this.connectionManager.getClient(userId);
+      const username = client?.username || userId;
+
+      // Remove from Redis
+      await this.lobbyManager.removeMember(lobbyId, userId);
+
+      // Update connection manager
+      this.connectionManager.unsubscribeFromLobby(userId);
+
+      // Notify others that member left
+      this.broadcastMemberLeft(lobbyId, userId, username);
+
+      // Broadcast updated roster to remaining members
+      await this.broadcastLobbyRoster(lobbyId);
+
+      return { 
+        success: true, 
+        lobbyId: lobbyId 
+      };
+    } catch (error) {
+      console.error('Error handling leave lobby:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Handle character change in lobby
+   */
+  async handleCharacterChange(lobbyId, userId, characterId) {
+    try {
+      // Check if user is in lobby
+      const isInLobby = await this.lobbyManager.isUserInLobby(lobbyId, userId);
       
-      if (lobbyClients.length === 0) {
+      if (!isInLobby) {
         return false;
       }
 
-      // Build roster with all member info
-      const members = lobbyClients.map(client => ({
-        userId: client.userId,
-        username: client.username,
-        characterId: client.characterId || null
-      }));
+      // Update in Redis
+      await this.lobbyManager.updateMemberCharacter(lobbyId, userId, characterId);
 
-      // Create roster event payload
+      // Broadcast updated roster
+      await this.broadcastLobbyRoster(lobbyId);
+
+      return true;
+    } catch (error) {
+      console.error('Error handling character change:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Broadcast lobby roster to all members (from Redis)
+   */
+  async broadcastLobbyRoster(lobbyId) {
+    try {
+      // Get fresh data from Redis
+      const members = await this.lobbyManager.getLobbyMembers(lobbyId);
+      
+      if (members.length === 0) {
+        return;
+      }
+
+      // Create roster event
       const rosterEvent = {
         type: 'lobby_event',
         eventType: 'lobby_roster',
         lobbyId: lobbyId,
-        members: members,
+        members: members.map(m => ({
+          userId: m.userId,
+          username: m.username,
+          characterId: m.characterId
+        })),
         timestamp: new Date().toISOString()
       };
 
-      const rosterJson = JSON.stringify(rosterEvent);
+      // Broadcast to all members
+      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
       let sentCount = 0;
 
-      // Send to specific recipient or all members
-      if (recipientUserId) {
-        const recipientClient = this.connectionManager.getClient(recipientUserId);
-        if (recipientClient && recipientClient.ws.readyState === 1) {
-          recipientClient.ws.send(rosterJson);
-          sentCount = 1;
-          console.log(`Sent lobby roster to ${recipientUserId} for lobby ${lobbyId} (${members.length} members)`);
-        }
-      } else {
-        // Broadcast to all lobby members
-        lobbyClients.forEach(client => {
-          try {
-            if (client.ws.readyState === 1) {
-              client.ws.send(rosterJson);
-              sentCount++;
-            }
-          } catch (error) {
-            console.error(`Error sending roster to ${client.userId}:`, error.message);
+      lobbyClients.forEach(client => {
+        try {
+          if (client.ws.readyState === 1) {
+            client.ws.send(JSON.stringify(rosterEvent));
+            sentCount++;
           }
-        });
-        console.log(`Broadcast lobby roster for ${lobbyId} to ${sentCount} members (${members.length} in roster)`);
-      }
-
-      return sentCount > 0;
-    } catch (error) {
-      console.error(`Error sending lobby roster:`, error);
-      return false;
-    }
-  }
-
-  /**
-   * Broadcast roster to all lobbies (periodic sync)
-   */
-  broadcastAllLobbyRosters() {
-    try {
-      const lobbies = this.connectionManager.getAllLobbies();
-      let lobbyCount = 0;
-
-      lobbies.forEach(lobbyId => {
-        const success = this.sendLobbyRoster(lobbyId);
-        if (success) lobbyCount++;
+        } catch (error) {
+          console.error(`Error sending roster to ${client.userId}:`, error.message);
+        }
       });
 
-      if (lobbyCount > 0) {
-        console.log(`Periodic roster sync: updated ${lobbyCount} lobbies`);
-      }
+      console.log(`Broadcast roster for lobby ${lobbyId} to ${sentCount} members`);
     } catch (error) {
-      console.error('Error in periodic roster broadcast:', error);
+      console.error('Error broadcasting lobby roster:', error);
     }
   }
 
   /**
-   * Handle start queue event
-   */
-  handleStartQueue(data, senderId) {
-    const { lobbyId, gameMode } = data;
-
-    // Validation
-    if (!lobbyId) {
-      return { success: false, error: 'Lobby ID is required' };
-    }
-
-    if (!gameMode) {
-      return { success: false, error: 'Game mode is required' };
-    }
-
-    if (!this.GAME_MODES.includes(gameMode)) {
-      return { success: false, error: `Invalid game mode. Must be one of: ${this.GAME_MODES.join(', ')}` };
-    }
-
-    // Check if sender is in the lobby
-    const senderClient = this.connectionManager.getClient(senderId);
-    if (!senderClient || senderClient.lobbyId !== lobbyId) {
-      return { success: false, error: 'You are not subscribed to this lobby' };
-    }
-
-    // Rate limiting
-    if (!this.checkRateLimit(senderId)) {
-      return { success: false, error: 'Rate limit exceeded. Please wait before sending more events.' };
-    }
-
-    // Broadcast to lobby members
-    const recipientCount = this.broadcastLobbyEvent(lobbyId, senderId, this.EVENT_TYPES.START_QUEUE, {
-      gameMode: gameMode
-    });
-
-    return { 
-      success: true, 
-      lobbyId: lobbyId,
-      eventType: 'start_queue',
-      recipients: recipientCount 
-    };
-  }
-
-  /**
-   * Handle stop queue event
-   */
-  handleStopQueue(data, senderId) {
-    const { lobbyId } = data;
-
-    // Validation
-    if (!lobbyId) {
-      return { success: false, error: 'Lobby ID is required' };
-    }
-
-    // Check if sender is in the lobby
-    const senderClient = this.connectionManager.getClient(senderId);
-    if (!senderClient || senderClient.lobbyId !== lobbyId) {
-      return { success: false, error: 'You are not subscribed to this lobby' };
-    }
-
-    // Rate limiting
-    if (!this.checkRateLimit(senderId)) {
-      return { success: false, error: 'Rate limit exceeded. Please wait before sending more events.' };
-    }
-
-    // Broadcast to lobby members
-    const recipientCount = this.broadcastLobbyEvent(lobbyId, senderId, this.EVENT_TYPES.STOP_QUEUE);
-
-    return { 
-      success: true, 
-      lobbyId: lobbyId,
-      eventType: 'stop_queue',
-      recipients: recipientCount 
-    };
-  }
-
-  /**
-   * Handle change mode event
-   */
-  handleChangeMode(data, senderId) {
-    const { lobbyId, gameMode } = data;
-
-    // Validation
-    if (!lobbyId) {
-      return { success: false, error: 'Lobby ID is required' };
-    }
-
-    if (!gameMode) {
-      return { success: false, error: 'Game mode is required' };
-    }
-
-    if (!this.GAME_MODES.includes(gameMode)) {
-      return { success: false, error: `Invalid game mode. Must be one of: ${this.GAME_MODES.join(', ')}` };
-    }
-
-    // Check if sender is in the lobby
-    const senderClient = this.connectionManager.getClient(senderId);
-    if (!senderClient || senderClient.lobbyId !== lobbyId) {
-      return { success: false, error: 'You are not subscribed to this lobby' };
-    }
-
-    // Rate limiting
-    if (!this.checkRateLimit(senderId)) {
-      return { success: false, error: 'Rate limit exceeded. Please wait before sending more events.' };
-    }
-
-    // Broadcast to lobby members
-    const recipientCount = this.broadcastLobbyEvent(lobbyId, senderId, this.EVENT_TYPES.CHANGE_MODE, {
-      gameMode: gameMode
-    });
-
-    return { 
-      success: true, 
-      lobbyId: lobbyId,
-      eventType: 'change_mode',
-      recipients: recipientCount 
-    };
-  }
-
-  /**
-   * Handle change host event (future feature)
-   */
-  handleChangeHost(data, senderId) {
-    const { lobbyId, newHostId } = data;
-
-    // Validation
-    if (!lobbyId) {
-      return { success: false, error: 'Lobby ID is required' };
-    }
-
-    if (!newHostId) {
-      return { success: false, error: 'New host ID is required' };
-    }
-
-    // Check if sender is in the lobby
-    const senderClient = this.connectionManager.getClient(senderId);
-    if (!senderClient || senderClient.lobbyId !== lobbyId) {
-      return { success: false, error: 'You are not subscribed to this lobby' };
-    }
-
-    // Get new host info
-    const newHostClient = this.connectionManager.getClient(newHostId);
-    if (!newHostClient) {
-      return { success: false, error: 'New host is not online or not in lobby' };
-    }
-
-    if (newHostClient.lobbyId !== lobbyId) {
-      return { success: false, error: 'New host is not in this lobby' };
-    }
-
-    const newHostName = newHostClient.username || 'Unknown';
-
-    // Rate limiting
-    if (!this.checkRateLimit(senderId)) {
-      return { success: false, error: 'Rate limit exceeded. Please wait before sending more events.' };
-    }
-
-    // Broadcast to lobby members
-    const recipientCount = this.broadcastLobbyEvent(lobbyId, senderId, this.EVENT_TYPES.CHANGE_HOST, {
-      newHostId: newHostId,
-      newHostName: newHostName
-    });
-
-    return { 
-      success: true, 
-      lobbyId: lobbyId,
-      eventType: 'change_host',
-      newHostId: newHostId,
-      newHostName: newHostName,
-      recipients: recipientCount 
-    };
-  }
-
-  /**
-   * Handle member explicitly leaving lobby (client-initiated)
-   */
-  handleMemberLeft(data, senderId) {
-    const { lobbyId } = data;
-
-    // Validation
-    if (!lobbyId) {
-      return { success: false, error: 'Lobby ID is required' };
-    }
-
-    // Check if sender is in the lobby
-    const senderClient = this.connectionManager.getClient(senderId);
-    if (!senderClient || senderClient.lobbyId !== lobbyId) {
-      return { success: false, error: 'You are not in this lobby' };
-    }
-
-    const senderName = senderClient.username || 'Unknown';
-
-    // Broadcast to other lobby members BEFORE unsubscribing
-    const recipientCount = this.broadcastMemberLeft(lobbyId, senderId, senderName);
-
-    // Unsubscribe the sender from the lobby
-    this.connectionManager.unsubscribeFromLobby(senderId);
-
-    // Send updated roster to remaining members
-    this.sendLobbyRoster(lobbyId);
-
-    return {
-      success: true,
-      lobbyId: lobbyId,
-      eventType: 'member_left',
-      recipients: recipientCount
-    };
-  }
-
-  /**
-   * Broadcast when a member leaves the lobby (disconnect or explicit leave)
+   * Broadcast member left event
    */
   broadcastMemberLeft(lobbyId, userId, username) {
     try {
-      // Create member left event payload
       const memberLeftEvent = {
         type: 'lobby_event',
         eventType: 'member_left',
@@ -396,40 +169,69 @@ class LobbyEventsHandler {
         timestamp: new Date().toISOString()
       };
 
-      // Get all remaining clients in the lobby
       const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
-      let notifiedCount = 0;
+      let sentCount = 0;
 
       lobbyClients.forEach(client => {
-        // Don't send back to the person leaving
-        if (client.userId === userId) {
-          return;
-        }
+        if (client.userId === userId) return; // Don't send to leaver
 
         try {
-          if (client.ws.readyState === 1) { // WebSocket.OPEN
+          if (client.ws.readyState === 1) {
             client.ws.send(JSON.stringify(memberLeftEvent));
-            notifiedCount++;
+            sentCount++;
           }
         } catch (error) {
-          console.error(`Error sending member_left to client ${client.userId}:`, error.message);
+          console.error(`Error sending member_left to ${client.userId}:`, error.message);
         }
       });
 
-      console.log(`Notified ${notifiedCount} lobby members that ${userId} (${username}) left lobby ${lobbyId}`);
-      return notifiedCount;
+      console.log(`Notified ${sentCount} members that ${userId} left lobby ${lobbyId}`);
     } catch (error) {
       console.error('Error broadcasting member left:', error);
-      return 0;
     }
   }
 
   /**
-   * Clean up rate limit tracking for disconnected users
+   * Periodic sync - broadcast roster for all active lobbies
    */
-  cleanupRateLimit(userId) {
-    this.eventCounts.delete(userId);
+  async syncAllLobbies() {
+    try {
+      const lobbyIds = await this.lobbyManager.getAllLobbyIds();
+      
+      for (const lobbyId of lobbyIds) {
+        await this.broadcastLobbyRoster(lobbyId);
+      }
+
+      if (lobbyIds.length > 0) {
+        console.log(`Synced ${lobbyIds.length} lobbies`);
+      }
+    } catch (error) {
+      console.error('Error syncing lobbies:', error);
+    }
   }
+
+  /**
+   * Handle disconnect - cleanup lobby if user was in one
+   */
+  async handleDisconnect(userId, lobbyId, username) {
+    if (!lobbyId) return;
+
+    try {
+      // Remove from Redis
+      await this.lobbyManager.removeMember(lobbyId, userId);
+
+      // Notify others
+      this.broadcastMemberLeft(lobbyId, userId, username);
+
+      // Broadcast updated roster
+      await this.broadcastLobbyRoster(lobbyId);
+    } catch (error) {
+      console.error('Error handling disconnect cleanup:', error);
+    }
+  }
+
+
+
 }
 
 module.exports = LobbyEventsHandler;

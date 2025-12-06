@@ -8,6 +8,7 @@ const http = require('http');
 const { initializeFirebase } = require('./config/firebase');
 const ConnectionManager = require('./managers/ConnectionManager');
 const PlayerStatusManager = require('./managers/PlayerStatusManager');
+const LobbyManager = require('./managers/LobbyManager');
 
 // Import handlers
 const GlobalChatHandler = require('./handlers/GlobalChatHandler');
@@ -24,12 +25,16 @@ initializeFirebase();
 // Initialize managers
 const connectionManager = new ConnectionManager();
 const playerStatusManager = new PlayerStatusManager();
-
+const lobbyManager = new LobbyManager();
 
 // Initialize Redis connection
 playerStatusManager.initialize().then(success => {
   if (success) {
     console.log('Player status manager initialized successfully');
+    
+    // Initialize lobby manager with Redis client from player status manager
+    lobbyManager.initialize(playerStatusManager.redis);
+    console.log('Lobby manager initialized successfully');
   } else {
     console.warn('Player status manager failed to initialize - status features will be limited');
   }
@@ -48,14 +53,14 @@ const server = http.createServer(app);
 // Initialize WebSocket server
 const wss = new WebSocket.Server({ server });
 
-// Initialize handlers
+// Initialize handlers (order matters - lobbyEventsHandler before statusUpdateHandler)
 const globalChatHandler = new GlobalChatHandler(connectionManager);
 const friendChatHandler = new FriendChatHandler(connectionManager);
 const lobbyChatHandler = new LobbyChatHandler(connectionManager);
 const notificationHandler = new NotificationHandler(connectionManager);
 const lobbyInviteHandler = new LobbyInviteHandler(connectionManager);
-const statusUpdateHandler = new StatusUpdateHandler(connectionManager, playerStatusManager);
-const lobbyEventsHandler = new LobbyEventsHandler(connectionManager);
+const lobbyEventsHandler = new LobbyEventsHandler(connectionManager, lobbyManager);
+const statusUpdateHandler = new StatusUpdateHandler(connectionManager, playerStatusManager, lobbyEventsHandler);
 
 // WebSocket connection handler
 wss.on('connection', (ws, req) => {
@@ -142,15 +147,12 @@ wss.on('connection', (ws, req) => {
           break;
 
         case 'lobby_subscribe':
-          result = lobbyChatHandler.handleSubscribe(data, userId);
-          // Broadcast updated roster to ALL lobby members (including new joiner)
-          if (result.success && data.lobbyId) {
-            lobbyEventsHandler.sendLobbyRoster(data.lobbyId);
-          }
+          result = await lobbyEventsHandler.handleJoinLobby(data, userId);
           break;
 
         case 'lobby_unsubscribe':
-          result = lobbyChatHandler.handleUnsubscribe(data, userId);
+        case 'lobby_member_left':
+          result = await lobbyEventsHandler.handleLeaveLobby(data, userId);
           break;
 
         case 'lobby_chat':
@@ -163,26 +165,6 @@ wss.on('connection', (ws, req) => {
 
         case 'lobby_invite_response':
           result = lobbyInviteHandler.handleInviteResponse(data, userId);
-          break;
-
-        case 'lobby_start_queue':
-          result = lobbyEventsHandler.handleStartQueue(data, userId);
-          break;
-
-        case 'lobby_stop_queue':
-          result = lobbyEventsHandler.handleStopQueue(data, userId);
-          break;
-
-        case 'lobby_change_mode':
-          result = lobbyEventsHandler.handleChangeMode(data, userId);
-          break;
-
-        case 'lobby_change_host':
-          result = lobbyEventsHandler.handleChangeHost(data, userId);
-          break;
-
-        case 'lobby_member_left':
-          result = lobbyEventsHandler.handleMemberLeft(data, userId);
           break;
 
         case 'ping':
@@ -219,16 +201,14 @@ wss.on('connection', (ws, req) => {
       const wasInLobby = client?.lobbyId;
       const username = client?.username || userId;
       
-      // If player was in a lobby, notify other members they left
+      // If player was in a lobby, cleanup in Redis and notify others
       if (wasInLobby) {
-        lobbyEventsHandler.broadcastMemberLeft(wasInLobby, userId, username);
+        await lobbyEventsHandler.handleDisconnect(userId, wasInLobby, username);
       }
       
       // Handle player going offline
       await statusUpdateHandler.handlePlayerOffline(userId);
       connectionManager.removeClient(userId);
-      // Clean up lobby event rate limiting
-      lobbyEventsHandler.cleanupRateLimit(userId);
     }
     console.log('WebSocket connection closed');
   });
@@ -477,10 +457,10 @@ server.listen(WS_PORT, () => {
   console.log(`===========================================`);
 });
 
-// Periodic lobby roster broadcast (every 10 seconds)
+// Periodic lobby roster sync from Redis (every 10 seconds)
 const ROSTER_SYNC_INTERVAL = 10000; // 10 seconds
-const rosterSyncTimer = setInterval(() => {
-  lobbyEventsHandler.broadcastAllLobbyRosters();
+const rosterSyncTimer = setInterval(async () => {
+  await lobbyEventsHandler.syncAllLobbies();
 }, ROSTER_SYNC_INTERVAL);
 
 console.log(`Lobby roster sync enabled (every ${ROSTER_SYNC_INTERVAL / 1000} seconds)`);

@@ -2,9 +2,10 @@
  * StatusUpdateHandler manages player status updates and friend notifications
  */
 class StatusUpdateHandler {
-  constructor(connectionManager, playerStatusManager) {
+  constructor(connectionManager, playerStatusManager, lobbyEventsHandler = null) {
     this.connectionManager = connectionManager;
     this.playerStatusManager = playerStatusManager;
+    this.lobbyEventsHandler = lobbyEventsHandler;
   }
 
   /**
@@ -46,9 +47,9 @@ class StatusUpdateHandler {
         client.characterId = characterId;
       }
 
-      // If user is in a lobby and character changed, notify lobby members
-      if (client && client.lobbyId && characterId !== undefined) {
-        await this.notifyLobbyOfCharacterChange(userId, client.lobbyId, characterId);
+      // If user is in a lobby and character changed, update Redis and broadcast
+      if (this.lobbyEventsHandler && client && client.lobbyId && characterId !== undefined) {
+        await this.lobbyEventsHandler.handleCharacterChange(client.lobbyId, userId, characterId);
       }
 
       // Get the user's friends and notify them about the status change
@@ -116,50 +117,7 @@ class StatusUpdateHandler {
     }
   }
 
-  /**
-   * Notify lobby members about character change
-   */
-  async notifyLobbyOfCharacterChange(userId, lobbyId, characterId) {
-    try {
-      const userClient = this.connectionManager.getClient(userId);
-      const username = userClient ? userClient.username : userId;
 
-      // Prepare lobby event message
-      const lobbyEvent = {
-        type: 'lobby_event',
-        eventType: 'character_changed',
-        lobbyId: lobbyId,
-        userId: userId,
-        username: username,
-        characterId: characterId,
-        timestamp: new Date().toISOString()
-      };
-
-      // Get all clients in the lobby
-      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
-      let notifiedCount = 0;
-
-      lobbyClients.forEach(client => {
-        // Don't send back to the sender
-        if (client.userId === userId) {
-          return;
-        }
-
-        try {
-          if (client.ws.readyState === 1) { // WebSocket.OPEN
-            client.ws.send(JSON.stringify(lobbyEvent));
-            notifiedCount++;
-          }
-        } catch (error) {
-          console.error(`Error sending character change to client ${client.userId}:`, error);
-        }
-      });
-
-      console.log(`Notified ${notifiedCount} lobby members about ${userId}'s character change to ${characterId}`);
-    } catch (error) {
-      console.error('Error notifying lobby of character change:', error);
-    }
-  }
 
   /**
    * Handle player going offline (cleanup)
