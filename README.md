@@ -139,7 +139,7 @@ Real-time bidirectional communication. See [How_to_use.md](./How_to_use.md) for 
 - `lobby_chat` - Send lobby message
 - `lobby_start_queue` - Notify lobby members queue started
 - `lobby_stop_queue` - Notify lobby members queue stopped
-- `lobby_change_mode` - Notify lobby members game mode changed
+- `change_mode` - Notify lobby members game mode changed
 - `lobby_change_host` - Notify lobby members host changed
 - `lobby_invite` - Send lobby invitation
 - `lobby_invite_response` - Respond to invitation
@@ -286,7 +286,7 @@ The server provides real-time lobby synchronization for matchmaking queue, game 
 **Change Mode** - Host changes game mode
 ```json
 {
-  "action": "lobby_change_mode",
+  "action": "change_mode",
   "lobbyId": "ABC123",
   "gameMode": "Ranked"
 }

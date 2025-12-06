@@ -234,21 +234,35 @@ class LobbyEventsHandler {
   }
 
   /**
-   * Periodic sync - broadcast roster for all active lobbies
+   * Periodic cleanup - remove lobbies with no active subscribers
    */
-  async syncAllLobbies() {
+  async cleanupInactiveLobbies() {
     try {
       const lobbyIds = await this.lobbyManager.getAllLobbyIds();
+      let cleanedCount = 0;
 
       for (const lobbyId of lobbyIds) {
-        await this.broadcastLobbyRoster(lobbyId);
+        // Check if lobby has any active subscribers
+        const subscribers = this.connectionManager.getLobbyClients(lobbyId);
+        
+        if (subscribers.length === 0) {
+          // No subscribers, remove all members from Redis
+          const members = await this.lobbyManager.getLobbyMembers(lobbyId);
+          
+          for (const member of members) {
+            await this.lobbyManager.removeMember(lobbyId, member.userId);
+          }
+          
+          cleanedCount++;
+          console.log(`Cleaned up inactive lobby ${lobbyId} (0 subscribers)`);
+        }
       }
 
-      if (lobbyIds.length > 0) {
-        console.log(`Synced ${lobbyIds.length} lobbies`);
+      if (cleanedCount > 0) {
+        console.log(`Periodic cleanup: removed ${cleanedCount} inactive lobbies`);
       }
     } catch (error) {
-      console.error('Error syncing lobbies:', error);
+      console.error('Error cleaning up inactive lobbies:', error);
     }
   }
 
@@ -272,8 +286,110 @@ class LobbyEventsHandler {
     }
   }
 
+  /**
+   * Handle lobby game mode change
+   */
+  async handleChangeMode(data, userId) {
+    const { lobbyId, gameMode } = data;
 
+    if (!lobbyId || !gameMode) {
+      return { success: false, error: 'Lobby ID and game mode are required' };
+    }
 
+    try {
+      const client = this.connectionManager.getClient(userId);
+      if (!client || client.lobbyId !== lobbyId) {
+        return { success: false, error: 'You are not in this lobby' };
+      }
+
+      // Update mode in Redis
+      await this.lobbyManager.setLobbyMode(lobbyId, gameMode);
+
+      // Broadcast mode change event
+      const modeEvent = {
+        type: 'lobby_event',
+        eventType: 'change_mode',
+        lobbyId: lobbyId,
+        gameMode: gameMode,
+        changedBy: userId,
+        changedByName: client.username,
+        timestamp: new Date().toISOString()
+      };
+
+      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      lobbyClients.forEach(c => {
+        try {
+          if (c.ws.readyState === 1) {
+            c.ws.send(JSON.stringify(modeEvent));
+          }
+        } catch (error) {
+          console.error(`Error sending mode change to ${c.userId}:`, error);
+        }
+      });
+
+      console.log(`Lobby ${lobbyId} mode changed to ${gameMode} by ${userId}`);
+      return { success: true, lobbyId, gameMode };
+    } catch (error) {
+      console.error('Error handling mode change:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Handle lobby host change
+   */
+  async handleChangeHost(data, userId) {
+    const { lobbyId, newHostId } = data;
+
+    if (!lobbyId || !newHostId) {
+      return { success: false, error: 'Lobby ID and new host ID are required' };
+    }
+
+    try {
+      const client = this.connectionManager.getClient(userId);
+      if (!client || client.lobbyId !== lobbyId) {
+        return { success: false, error: 'You are not in this lobby' };
+      }
+
+      // Check if new host is in the lobby
+      const newHostClient = this.connectionManager.getClient(newHostId);
+      if (!newHostClient || newHostClient.lobbyId !== lobbyId) {
+        return { success: false, error: 'New host is not in this lobby' };
+      }
+
+      // Update host in Redis
+      await this.lobbyManager.setLobbyHost(lobbyId, newHostId);
+
+      // Broadcast host change event
+      const hostEvent = {
+        type: 'lobby_event',
+        eventType: 'change_host',
+        lobbyId: lobbyId,
+        newHostId: newHostId,
+        newHostName: newHostClient.username,
+        changedBy: userId,
+        changedByName: client.username,
+        timestamp: new Date().toISOString()
+      };
+
+      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      lobbyClients.forEach(c => {
+        try {
+          if (c.ws.readyState === 1) {
+            c.ws.send(JSON.stringify(hostEvent));
+          }
+        } catch (error) {
+          console.error(`Error sending host change to ${c.userId}:`, error);
+        }
+      });
+
+      console.log(`Lobby ${lobbyId} host changed to ${newHostId} by ${userId}`);
+      return { success: true, lobbyId, newHostId };
+    } catch (error) {
+      console.error('Error handling host change:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 module.exports = LobbyEventsHandler;

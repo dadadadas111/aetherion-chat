@@ -190,6 +190,22 @@ wss.on('connection', (ws, req) => {
           result = lobbyInviteHandler.handleInviteResponse(data, userId);
           break;
 
+        case 'change_mode':
+          if (!lobbyEventsHandler) {
+            result = { success: false, error: 'Lobby system not ready' };
+          } else {
+            result = await lobbyEventsHandler.handleChangeMode(data, userId);
+          }
+          break;
+
+        case 'lobby_change_host':
+          if (!lobbyEventsHandler) {
+            result = { success: false, error: 'Lobby system not ready' };
+          } else {
+            result = await lobbyEventsHandler.handleChangeHost(data, userId);
+          }
+          break;
+
         case 'ping':
           result = { type: 'pong', timestamp: new Date().toISOString() };
           ws.send(JSON.stringify(result));
@@ -482,9 +498,22 @@ server.listen(WS_PORT, () => {
   console.log(`===========================================`);
 });
 
+// Periodic lobby cleanup (every 10 minutes)
+const CLEANUP_INTERVAL = 10 * 60 * 1000; // 10 minutes
+const cleanupTimer = setInterval(async () => {
+  if (lobbyEventsHandler) {
+    await lobbyEventsHandler.cleanupInactiveLobbies();
+  }
+}, CLEANUP_INTERVAL);
+
+console.log(`Lobby cleanup enabled (every ${CLEANUP_INTERVAL / 60000} minutes)`);
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM signal received: closing server');
+  
+  // Clear cleanup timer
+  clearInterval(cleanupTimer);
   
   // Close Redis connection
   try {
@@ -502,8 +531,8 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   console.log('SIGINT signal received: closing server');
   
-  // Clear roster sync timer
-  clearInterval(rosterSyncTimer);
+  // Clear cleanup timer
+  clearInterval(cleanupTimer);
   
   // Close Redis connection
   try {

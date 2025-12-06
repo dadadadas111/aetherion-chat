@@ -239,11 +239,67 @@ class LobbyManager {
           // Delete empty lobby
           await this.redisClient.del(`${this.REDIS_KEYS.LOBBY}${lobbyId}`);
           await this.redisClient.del(`${this.REDIS_KEYS.LOBBY_MEMBERS}${lobbyId}`);
+          await this.redisClient.del(`lobby:settings:${lobbyId}`);
           console.log(`Cleaned up empty lobby ${lobbyId}`);
         }
       }
     } catch (error) {
       console.error('Error cleaning up lobbies:', error);
+    }
+  }
+
+  /**
+   * Set lobby game mode
+   */
+  async setLobbyMode(lobbyId, gameMode) {
+    if (!this.isRedisAvailable()) {
+      return false;
+    }
+
+    try {
+      await this.redisClient.hSet(`lobby:settings:${lobbyId}`, 'gameMode', gameMode);
+      await this.redisClient.expire(`lobby:settings:${lobbyId}`, this.LOBBY_TTL);
+      console.log(`Set lobby ${lobbyId} mode to ${gameMode}`);
+      return true;
+    } catch (error) {
+      console.error('Error setting lobby mode:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Set lobby host
+   */
+  async setLobbyHost(lobbyId, hostId) {
+    if (!this.isRedisAvailable()) {
+      return false;
+    }
+
+    try {
+      await this.redisClient.hSet(`lobby:settings:${lobbyId}`, 'hostId', hostId);
+      await this.redisClient.expire(`lobby:settings:${lobbyId}`, this.LOBBY_TTL);
+      console.log(`Set lobby ${lobbyId} host to ${hostId}`);
+      return true;
+    } catch (error) {
+      console.error('Error setting lobby host:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get lobby settings
+   */
+  async getLobbySettings(lobbyId) {
+    if (!this.isRedisAvailable()) {
+      return null;
+    }
+
+    try {
+      const settings = await this.redisClient.hGetAll(`lobby:settings:${lobbyId}`);
+      return settings || {};
+    } catch (error) {
+      console.error('Error getting lobby settings:', error);
+      return null;
     }
   }
 }

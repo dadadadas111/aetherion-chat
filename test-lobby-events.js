@@ -103,7 +103,7 @@ async function runTests() {
     await wait(1000);
     
     console.log('\n=== TEST 2: Host changes mode to Ranked ===');
-    sendMessage(connections[0].ws, 'lobby_change_mode', {
+    sendMessage(connections[0].ws, 'change_mode', {
       lobbyId: LOBBY_ID,
       gameMode: 'Ranked'
     });
@@ -116,7 +116,7 @@ async function runTests() {
     await wait(1000);
     
     console.log('\n=== TEST 4: Host changes mode to Custom ===');
-    sendMessage(connections[0].ws, 'lobby_change_mode', {
+    sendMessage(connections[0].ws, 'change_mode', {
       lobbyId: LOBBY_ID,
       gameMode: 'Custom'
     });
