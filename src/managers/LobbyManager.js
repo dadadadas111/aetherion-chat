@@ -302,6 +302,28 @@ class LobbyManager {
       return null;
     }
   }
+
+  /**
+   * Set lobby queue status
+   */
+  async setLobbyQueueStatus(lobbyId, isQueuing, gameMode = null) {
+    if (!this.isRedisAvailable()) {
+      return false;
+    }
+
+    try {
+      await this.redisClient.hSet(`lobby:settings:${lobbyId}`, 'isQueuing', isQueuing ? '1' : '0');
+      if (gameMode) {
+        await this.redisClient.hSet(`lobby:settings:${lobbyId}`, 'queueGameMode', gameMode);
+      }
+      await this.redisClient.expire(`lobby:settings:${lobbyId}`, this.LOBBY_TTL);
+      console.log(`Set lobby ${lobbyId} queue status to ${isQueuing}${gameMode ? ` (${gameMode})` : ''}`);
+      return true;
+    } catch (error) {
+      console.error('Error setting lobby queue status:', error);
+      return false;
+    }
+  }
 }
 
 module.exports = LobbyManager;

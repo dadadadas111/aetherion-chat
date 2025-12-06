@@ -390,6 +390,103 @@ class LobbyEventsHandler {
       return { success: false, error: error.message };
     }
   }
+
+  /**
+   * Handle lobby start queue
+   */
+  async handleStartQueue(data, userId) {
+    const { lobbyId, gameMode } = data;
+
+    if (!lobbyId || !gameMode) {
+      return { success: false, error: 'Lobby ID and game mode are required' };
+    }
+
+    try {
+      const client = this.connectionManager.getClient(userId);
+      if (!client || client.lobbyId !== lobbyId) {
+        return { success: false, error: 'You are not in this lobby' };
+      }
+
+      // Update queue status in Redis
+      await this.lobbyManager.setLobbyQueueStatus(lobbyId, true, gameMode);
+
+      // Broadcast start queue event
+      const queueEvent = {
+        type: 'lobby_event',
+        eventType: 'start_queue',
+        lobbyId: lobbyId,
+        gameMode: gameMode,
+        startedBy: userId,
+        startedByName: client.username,
+        timestamp: new Date().toISOString()
+      };
+
+      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      lobbyClients.forEach(c => {
+        try {
+          if (c.ws.readyState === 1) {
+            c.ws.send(JSON.stringify(queueEvent));
+          }
+        } catch (error) {
+          console.error(`Error sending start queue to ${c.userId}:`, error);
+        }
+      });
+
+      console.log(`Lobby ${lobbyId} started queue for ${gameMode} by ${userId}`);
+      return { success: true, lobbyId, gameMode };
+    } catch (error) {
+      console.error('Error handling start queue:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Handle lobby stop queue
+   */
+  async handleStopQueue(data, userId) {
+    const { lobbyId } = data;
+
+    if (!lobbyId) {
+      return { success: false, error: 'Lobby ID is required' };
+    }
+
+    try {
+      const client = this.connectionManager.getClient(userId);
+      if (!client || client.lobbyId !== lobbyId) {
+        return { success: false, error: 'You are not in this lobby' };
+      }
+
+      // Update queue status in Redis
+      await this.lobbyManager.setLobbyQueueStatus(lobbyId, false);
+
+      // Broadcast stop queue event
+      const queueEvent = {
+        type: 'lobby_event',
+        eventType: 'stop_queue',
+        lobbyId: lobbyId,
+        stoppedBy: userId,
+        stoppedByName: client.username,
+        timestamp: new Date().toISOString()
+      };
+
+      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      lobbyClients.forEach(c => {
+        try {
+          if (c.ws.readyState === 1) {
+            c.ws.send(JSON.stringify(queueEvent));
+          }
+        } catch (error) {
+          console.error(`Error sending stop queue to ${c.userId}:`, error);
+        }
+      });
+
+      console.log(`Lobby ${lobbyId} stopped queue by ${userId}`);
+      return { success: true, lobbyId };
+    } catch (error) {
+      console.error('Error handling stop queue:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 module.exports = LobbyEventsHandler;

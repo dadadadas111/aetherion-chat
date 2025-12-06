@@ -190,7 +190,7 @@ wss.on('connection', (ws, req) => {
           result = lobbyInviteHandler.handleInviteResponse(data, userId);
           break;
 
-        case 'change_mode':
+        case 'lobby_change_mode':
           if (!lobbyEventsHandler) {
             result = { success: false, error: 'Lobby system not ready' };
           } else {
@@ -203,6 +203,22 @@ wss.on('connection', (ws, req) => {
             result = { success: false, error: 'Lobby system not ready' };
           } else {
             result = await lobbyEventsHandler.handleChangeHost(data, userId);
+          }
+          break;
+
+        case 'lobby_start_queue':
+          if (!lobbyEventsHandler) {
+            result = { success: false, error: 'Lobby system not ready' };
+          } else {
+            result = await lobbyEventsHandler.handleStartQueue(data, userId);
+          }
+          break;
+
+        case 'lobby_stop_queue':
+          if (!lobbyEventsHandler) {
+            result = { success: false, error: 'Lobby system not ready' };
+          } else {
+            result = await lobbyEventsHandler.handleStopQueue(data, userId);
           }
           break;
 
