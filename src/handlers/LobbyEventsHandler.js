@@ -111,10 +111,35 @@ class LobbyEventsHandler {
 
   /**
    * Broadcast lobby roster to all members (from Redis)
+   * Syncs Redis with active subscribers - prioritizes subscribers
    */
   async broadcastLobbyRoster(lobbyId) {
     try {
-      // Get fresh data from Redis
+      // Get active subscribers from connection manager
+      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      const subscriberIds = new Set(lobbyClients.map(c => c.userId));
+      
+      // Get members from Redis
+      const redisMembers = await this.lobbyManager.getLobbyMembers(lobbyId);
+      const redisMemberIds = new Set(redisMembers.map(m => m.userId));
+      
+      // Sync: Remove from Redis if not subscribed
+      for (const redisMember of redisMembers) {
+        if (!subscriberIds.has(redisMember.userId)) {
+          console.log(`Sync: Removing ${redisMember.userId} from Redis (not subscribed)`);
+          await this.lobbyManager.removeMember(lobbyId, redisMember.userId);
+        }
+      }
+      
+      // Sync: Add to Redis if subscribed but not in Redis
+      for (const client of lobbyClients) {
+        if (!redisMemberIds.has(client.userId)) {
+          console.log(`Sync: Adding ${client.userId} to Redis (subscribed but missing)`);
+          await this.lobbyManager.addMember(lobbyId, client.userId, client.username, client.characterId);
+        }
+      }
+      
+      // Get fresh synced data from Redis
       const members = await this.lobbyManager.getLobbyMembers(lobbyId);
       
       if (members.length === 0) {
@@ -134,8 +159,7 @@ class LobbyEventsHandler {
         timestamp: new Date().toISOString()
       };
 
-      // Broadcast to all members
-      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      // Broadcast to all subscribers
       let sentCount = 0;
 
       lobbyClients.forEach(client => {
@@ -149,7 +173,7 @@ class LobbyEventsHandler {
         }
       });
 
-      console.log(`Broadcast roster for lobby ${lobbyId} to ${sentCount} members`);
+      console.log(`Broadcast roster for lobby ${lobbyId} to ${sentCount} members (${members.length} in Redis)`);
     } catch (error) {
       console.error('Error broadcasting lobby roster:', error);
     }
