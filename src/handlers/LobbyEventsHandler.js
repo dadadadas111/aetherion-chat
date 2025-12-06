@@ -28,22 +28,25 @@ class LobbyEventsHandler {
       const oldLobbyId = client.lobbyId;
       if (oldLobbyId && oldLobbyId !== lobbyId) {
         console.log(`User ${userId} leaving old lobby ${oldLobbyId} before joining ${lobbyId}`);
-        
+
+        // Update connection manager
+        this.connectionManager.unsubscribeFromLobby(userId);
+
         // Remove from old lobby in Redis
         await this.lobbyManager.removeMember(oldLobbyId, userId);
-        
+
         // Notify old lobby members
         this.broadcastMemberLeft(oldLobbyId, userId, client.username);
-        
+
         // Broadcast updated roster to old lobby
         await this.broadcastLobbyRoster(oldLobbyId);
       }
-      
+
       // Add to new lobby in Redis
       await this.lobbyManager.addMember(
-        lobbyId, 
-        userId, 
-        client.username, 
+        lobbyId,
+        userId,
+        client.username,
         client.characterId
       );
 
@@ -53,9 +56,9 @@ class LobbyEventsHandler {
       // Broadcast updated roster to new lobby members
       await this.broadcastLobbyRoster(lobbyId);
 
-      return { 
-        success: true, 
-        lobbyId: lobbyId 
+      return {
+        success: true,
+        lobbyId: lobbyId
       };
     } catch (error) {
       console.error('Error handling join lobby:', error);
@@ -77,11 +80,11 @@ class LobbyEventsHandler {
       const client = this.connectionManager.getClient(userId);
       const username = client?.username || userId;
 
-      // Remove from Redis
-      await this.lobbyManager.removeMember(lobbyId, userId);
-
       // Update connection manager
       this.connectionManager.unsubscribeFromLobby(userId);
+
+      // Remove from Redis
+      await this.lobbyManager.removeMember(lobbyId, userId);
 
       // Notify others that member left
       this.broadcastMemberLeft(lobbyId, userId, username);
@@ -89,9 +92,9 @@ class LobbyEventsHandler {
       // Broadcast updated roster to remaining members
       await this.broadcastLobbyRoster(lobbyId);
 
-      return { 
-        success: true, 
-        lobbyId: lobbyId 
+      return {
+        success: true,
+        lobbyId: lobbyId
       };
     } catch (error) {
       console.error('Error handling leave lobby:', error);
@@ -106,7 +109,7 @@ class LobbyEventsHandler {
     try {
       // Check if user is in lobby
       const isInLobby = await this.lobbyManager.isUserInLobby(lobbyId, userId);
-      
+
       if (!isInLobby) {
         return false;
       }
@@ -133,11 +136,11 @@ class LobbyEventsHandler {
       // Get active subscribers from connection manager
       const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
       const subscriberIds = new Set(lobbyClients.map(c => c.userId));
-      
+
       // Get members from Redis
       const redisMembers = await this.lobbyManager.getLobbyMembers(lobbyId);
       const redisMemberIds = new Set(redisMembers.map(m => m.userId));
-      
+
       // Sync: Remove from Redis if not subscribed
       for (const redisMember of redisMembers) {
         if (!subscriberIds.has(redisMember.userId)) {
@@ -145,7 +148,7 @@ class LobbyEventsHandler {
           await this.lobbyManager.removeMember(lobbyId, redisMember.userId);
         }
       }
-      
+
       // Sync: Add to Redis if subscribed but not in Redis
       for (const client of lobbyClients) {
         if (!redisMemberIds.has(client.userId)) {
@@ -153,10 +156,10 @@ class LobbyEventsHandler {
           await this.lobbyManager.addMember(lobbyId, client.userId, client.username, client.characterId);
         }
       }
-      
+
       // Get fresh synced data from Redis
       const members = await this.lobbyManager.getLobbyMembers(lobbyId);
-      
+
       if (members.length === 0) {
         return;
       }
@@ -236,7 +239,7 @@ class LobbyEventsHandler {
   async syncAllLobbies() {
     try {
       const lobbyIds = await this.lobbyManager.getAllLobbyIds();
-      
+
       for (const lobbyId of lobbyIds) {
         await this.broadcastLobbyRoster(lobbyId);
       }
