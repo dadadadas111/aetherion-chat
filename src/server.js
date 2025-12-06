@@ -190,7 +190,7 @@ wss.on('connection', (ws, req) => {
           result = lobbyInviteHandler.handleInviteResponse(data, userId);
           break;
 
-        case 'lobby_change_mode':
+        case 'change_mode':
           if (!lobbyEventsHandler) {
             result = { success: false, error: 'Lobby system not ready' };
           } else {
