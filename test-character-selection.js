@@ -70,6 +70,11 @@ async function connectUsers() {
               console.log(`  New Character: ${msg.characterId}`);
               console.log(`  Lobby: ${msg.lobbyId}\n`);
             }
+            else if (msg.eventType === 'member_left') {
+              console.log(`\n[${user.username} RECEIVED MEMBER LEFT]:`);
+              console.log(`  Player: ${msg.username} (${msg.userId})`);
+              console.log(`  Lobby: ${msg.lobbyId}\n`);
+            }
           } 
           else if (msg.type === 'ack') {
             if (msg.action === 'lobby_subscribe' && msg.success) {
@@ -130,6 +135,10 @@ async function runTests() {
     
     console.log('\n=== TEST 6: Player 3 changes character ===');
     await changeCharacter(2, 'rogue_shadow_skin');
+    
+    console.log('\n=== TEST 7: Player 2 disconnects (member_left event) ===');
+    connections[1].ws.close();
+    await wait(1000);
     
     console.log('\n=== All character selection tests completed ===\n');
     

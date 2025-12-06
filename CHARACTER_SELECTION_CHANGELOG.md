@@ -132,11 +132,44 @@ Populate the lobby UI with all members and their selected characters.
 
 ---
 
-### 5. NEW Lobby Event: Member Left
+### 5. NEW Action: Leave Lobby (with notification)
+
+**Action Name:** `lobby_member_left`
+
+**Purpose:** Client explicitly leaves the lobby and notifies all other members.
+
+**Payload:**
+```json
+{
+  "action": "lobby_member_left",
+  "lobbyId": "ABC123"
+}
+```
+
+**Client Behavior:**
+- Send when player actively leaves a lobby (e.g., clicks "Leave Lobby" button)
+- Server will notify all remaining members via `member_left` event
+- Automatically unsubscribes sender from the lobby
+
+**Difference from `lobby_unsubscribe`:**
+- `lobby_unsubscribe`: Silent leave, no notification to others
+- `lobby_member_left`: Notifies all remaining members
+
+**Example:**
+```json
+{
+  "action": "lobby_member_left",
+  "lobbyId": "ABC123"
+}
+```
+
+---
+
+### 6. NEW Lobby Event: Member Left
 
 **Event Type:** `member_left`
 
-**Received By:** All remaining lobby members (when someone disconnects)
+**Received By:** All remaining lobby members (when someone leaves or disconnects)
 
 **Payload:**
 ```json
@@ -151,7 +184,8 @@ Populate the lobby UI with all members and their selected characters.
 ```
 
 **When Fired:**
-- Automatically sent when a player disconnects from the server while in a lobby
+- When a player sends `lobby_member_left` action
+- When a player disconnects from the server while in a lobby
 - All remaining lobby members receive this event
 
 **Unity Client Action:**
@@ -225,6 +259,28 @@ public void UpdateCharacterSelection(string characterId)
 ```
 
 **Important:** This automatically notifies all lobby members if you're in a lobby.
+
+---
+
+### Step 2b: Leave Lobby (with notification)
+
+When player leaves a lobby:
+
+```csharp
+public void LeaveLobby(string lobbyId)
+{
+    var leaveMsg = new {
+        action = "lobby_member_left",  // Use this instead of lobby_unsubscribe
+        lobbyId = lobbyId
+    };
+    
+    ws.Send(JsonUtility.ToJson(leaveMsg));
+}
+```
+
+**Note:** 
+- Use `lobby_member_left` to notify other members you're leaving
+- Use `lobby_unsubscribe` for silent leave (no notification)
 
 ---
 
@@ -396,6 +452,12 @@ void OnWebSocketMessage(string message)
    ```json
    → New member subscribes to lobby
    ← New member receives: Roster with everyone's current characters (including the mage)
+   ```
+
+4. **A member disconnects:**
+   ```json
+   → Member's connection closes
+   ← All remaining lobby members receive: member_left event
    ```
 
 ---

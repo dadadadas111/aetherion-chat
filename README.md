@@ -134,7 +134,8 @@ Real-time bidirectional communication. See [How_to_use.md](./How_to_use.md) for 
 - `global_chat` - Send global message
 - `friend_chat` - Send private message
 - `lobby_subscribe` - Join lobby channel
-- `lobby_unsubscribe` - Leave lobby channel
+- `lobby_unsubscribe` - Leave lobby channel (silent, no notification)
+- `lobby_member_left` - Leave lobby and notify all members
 - `lobby_chat` - Send lobby message
 - `lobby_start_queue` - Notify lobby members queue started
 - `lobby_stop_queue` - Notify lobby members queue stopped
@@ -321,6 +322,7 @@ All subscribed lobby members (except sender) receive:
 - ✅ Rate limiting (10 events per minute per user)
 - ✅ Support for multiple independent lobbies
 - ✅ Automatic cleanup on disconnect
+- ✅ Member disconnect notifications to remaining lobby members
 
 ### Testing
 Run the included test script:

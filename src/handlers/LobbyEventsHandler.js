@@ -303,7 +303,40 @@ class LobbyEventsHandler {
   }
 
   /**
-   * Broadcast when a member leaves the lobby (disconnect)
+   * Handle member explicitly leaving lobby (client-initiated)
+   */
+  handleMemberLeft(data, senderId) {
+    const { lobbyId } = data;
+
+    // Validation
+    if (!lobbyId) {
+      return { success: false, error: 'Lobby ID is required' };
+    }
+
+    // Check if sender is in the lobby
+    const senderClient = this.connectionManager.getClient(senderId);
+    if (!senderClient || senderClient.lobbyId !== lobbyId) {
+      return { success: false, error: 'You are not in this lobby' };
+    }
+
+    const senderName = senderClient.username || 'Unknown';
+
+    // Broadcast to other lobby members BEFORE unsubscribing
+    const recipientCount = this.broadcastMemberLeft(lobbyId, senderId, senderName);
+
+    // Unsubscribe the sender from the lobby
+    this.connectionManager.unsubscribeFromLobby(senderId);
+
+    return {
+      success: true,
+      lobbyId: lobbyId,
+      eventType: 'member_left',
+      recipients: recipientCount
+    };
+  }
+
+  /**
+   * Broadcast when a member leaves the lobby (disconnect or explicit leave)
    */
   broadcastMemberLeft(lobbyId, userId, username) {
     try {
@@ -322,6 +355,11 @@ class LobbyEventsHandler {
       let notifiedCount = 0;
 
       lobbyClients.forEach(client => {
+        // Don't send back to the person leaving
+        if (client.userId === userId) {
+          return;
+        }
+
         try {
           if (client.ws.readyState === 1) { // WebSocket.OPEN
             client.ws.send(JSON.stringify(memberLeftEvent));

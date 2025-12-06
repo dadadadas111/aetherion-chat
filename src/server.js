@@ -181,6 +181,10 @@ wss.on('connection', (ws, req) => {
           result = lobbyEventsHandler.handleChangeHost(data, userId);
           break;
 
+        case 'lobby_member_left':
+          result = lobbyEventsHandler.handleMemberLeft(data, userId);
+          break;
+
         case 'ping':
           result = { type: 'pong', timestamp: new Date().toISOString() };
           ws.send(JSON.stringify(result));

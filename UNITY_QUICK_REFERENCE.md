@@ -6,6 +6,23 @@
 
 ## 🎯 What You Need to Do
 
+### 0. Leave Lobby with Notification ✓
+```csharp
+// When player clicks "Leave Lobby" button
+public void OnLeaveLobbyClicked(string lobbyId)
+{
+    var msg = new {
+        action = "lobby_member_left",  // Notifies others
+        lobbyId = lobbyId
+    };
+    ws.Send(JsonUtility.ToJson(msg));
+}
+
+// Use lobby_unsubscribe for silent leave (no notification)
+```
+
+---
+
 ### 1. Add Character to Authentication ✓
 ```csharp
 var authMsg = new {
