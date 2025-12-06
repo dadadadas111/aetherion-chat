@@ -482,22 +482,9 @@ server.listen(WS_PORT, () => {
   console.log(`===========================================`);
 });
 
-// Periodic lobby roster sync from Redis (every 10 seconds)
-const ROSTER_SYNC_INTERVAL = 10000; // 10 seconds
-const rosterSyncTimer = setInterval(async () => {
-  if (lobbyEventsHandler) {
-    await lobbyEventsHandler.syncAllLobbies();
-  }
-}, ROSTER_SYNC_INTERVAL);
-
-console.log(`Lobby roster sync enabled (every ${ROSTER_SYNC_INTERVAL / 1000} seconds)`);
-
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM signal received: closing server');
-  
-  // Clear roster sync timer
-  clearInterval(rosterSyncTimer);
   
   // Close Redis connection
   try {
