@@ -56,6 +56,62 @@ class LobbyEventsHandler {
       // Broadcast updated roster to new lobby members
       await this.broadcastLobbyRoster(lobbyId);
 
+      // Send current lobby settings to the new joiner after a short delay
+      setTimeout(async () => {
+        try {
+          const settings = await this.lobbyManager.getLobbySettings(lobbyId);
+          
+          if (settings && Object.keys(settings).length > 0) {
+            const joinerClient = this.connectionManager.getClient(userId);
+            
+            if (joinerClient && joinerClient.ws.readyState === 1) {
+              // Send current game mode if set
+              if (settings.gameMode) {
+                const modeEvent = {
+                  type: 'lobby_event',
+                  eventType: 'mode_changed',
+                  lobbyId: lobbyId,
+                  gameMode: settings.gameMode,
+                  timestamp: new Date().toISOString()
+                };
+                joinerClient.ws.send(JSON.stringify(modeEvent));
+                console.log(`Sent current mode ${settings.gameMode} to new joiner ${userId}`);
+              }
+
+              // Send current host if set
+              if (settings.hostId) {
+                const hostClient = this.connectionManager.getClient(settings.hostId);
+                const hostEvent = {
+                  type: 'lobby_event',
+                  eventType: 'host_changed',
+                  lobbyId: lobbyId,
+                  newHostId: settings.hostId,
+                  newHostName: hostClient?.username || settings.hostId,
+                  timestamp: new Date().toISOString()
+                };
+                joinerClient.ws.send(JSON.stringify(hostEvent));
+                console.log(`Sent current host ${settings.hostId} to new joiner ${userId}`);
+              }
+
+              // Send queue status if queuing
+              if (settings.isQueuing === '1') {
+                const queueEvent = {
+                  type: 'lobby_event',
+                  eventType: 'start_queue',
+                  lobbyId: lobbyId,
+                  gameMode: settings.queueGameMode || settings.gameMode,
+                  timestamp: new Date().toISOString()
+                };
+                joinerClient.ws.send(JSON.stringify(queueEvent));
+                console.log(`Sent queue status to new joiner ${userId}`);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error sending lobby settings to new joiner:', error);
+        }
+      }, 2000); // 2 second delay
+
       return {
         success: true,
         lobbyId: lobbyId
