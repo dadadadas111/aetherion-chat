@@ -13,7 +13,7 @@ class LobbyEventsHandler {
    */
   async handleJoinLobby(data, userId) {
     const { lobbyId } = data;
-
+    console.log(`Handling join lobby for user ${userId} to lobby ${lobbyId}`);
     if (!lobbyId) {
       return { success: false, error: 'Lobby ID is required' };
     }

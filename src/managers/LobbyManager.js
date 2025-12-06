@@ -73,13 +73,26 @@ class LobbyManager {
     }
 
     try {
+      const memberKey = `${this.REDIS_KEYS.LOBBY_MEMBERS}${lobbyId}`;
+      const lobbyKey = `${this.REDIS_KEYS.LOBBY}${lobbyId}`;
+      
       // Remove from members set
-      await this.redisClient.sRem(`${this.REDIS_KEYS.LOBBY_MEMBERS}${lobbyId}`, userId);
+      await this.redisClient.sRem(memberKey, userId);
       
       // Remove member data
-      await this.redisClient.hDel(`${this.REDIS_KEYS.LOBBY}${lobbyId}`, userId);
+      await this.redisClient.hDel(lobbyKey, userId);
       
       console.log(`Removed ${userId} from lobby ${lobbyId}`);
+      
+      // Check if lobby is now empty and clean up
+      const remainingMembers = await this.redisClient.sCard(memberKey);
+      
+      if (remainingMembers === 0) {
+        await this.redisClient.del(memberKey);
+        await this.redisClient.del(lobbyKey);
+        console.log(`Cleaned up empty lobby ${lobbyId}`);
+      }
+      
       return true;
     } catch (error) {
       console.error('Error removing member from lobby:', error);
