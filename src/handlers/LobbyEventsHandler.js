@@ -69,7 +69,7 @@ class LobbyEventsHandler {
               if (settings.gameMode) {
                 const modeEvent = {
                   type: 'lobby_event',
-                  eventType: 'mode_changed',
+                  eventType: 'change_mode',
                   lobbyId: lobbyId,
                   gameMode: settings.gameMode,
                   timestamp: new Date().toISOString()
