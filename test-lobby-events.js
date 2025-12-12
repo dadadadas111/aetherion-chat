@@ -51,7 +51,7 @@ async function connectUsers() {
           if (msg.type === 'auth_success') {
             console.log(`${user.username} authenticated`);
             resolve();
-          } else if (msg.type === 'lobby_event') {
+            } else if (msg.type === 'lobby_event') {
             console.log(`\n[${user.username} RECEIVED EVENT]:`);
             console.log(`  Event Type: ${msg.eventType}`);
             console.log(`  Sender: ${msg.senderName} (${msg.senderId})`);
@@ -59,6 +59,12 @@ async function connectUsers() {
             if (msg.gameMode) console.log(`  Game Mode: ${msg.gameMode}`);
             if (msg.newHostId) console.log(`  New Host: ${msg.newHostName} (${msg.newHostId})`);
             console.log(`  Timestamp: ${msg.timestamp}\n`);
+            } else if (msg.type === 'lobby_chat') {
+              console.log(`\n[${user.username} RECEIVED CHAT]:`);
+              console.log(`  Lobby: ${msg.lobbyId}`);
+              console.log(`  From: ${msg.senderName} (${msg.senderId})`);
+              console.log(`  Message: ${msg.message}`);
+              console.log(`  Timestamp: ${msg.timestamp}\n`);
           } else if (msg.type === 'ack') {
             console.log(`${user.username} ACK: ${msg.action} - ${msg.success ? 'SUCCESS' : 'FAILED'}`);
             if (msg.recipients !== undefined) {
@@ -133,6 +139,13 @@ async function runTests() {
     sendMessage(connections[0].ws, 'lobby_change_host', {
       lobbyId: LOBBY_ID,
       newHostId: 'member_002'
+    });
+    await wait(1000);
+
+    console.log('\n=== TEST CHAT: MemberPlayer1 sends a lobby chat message ===');
+    sendMessage(connections[1].ws, 'lobby_chat', {
+      lobbyId: LOBBY_ID,
+      message: 'Hello everyone, this is MemberPlayer1'
     });
     await wait(1000);
     
