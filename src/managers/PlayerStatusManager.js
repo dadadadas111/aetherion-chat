@@ -16,7 +16,7 @@ class PlayerStatusManager {
             OFFLINE: 'offline',
             INGAME: 'ingame'
         };
-        this.STATUS_TTL = 300; // 5 minutes TTL for status
+        this.STATUS_TTL = 36000; // 10 hours TTL for status
     }
 
 
