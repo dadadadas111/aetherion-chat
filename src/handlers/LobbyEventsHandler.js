@@ -3,9 +3,10 @@
  * All lobby state stored in Redis, broadcasts sync'd data to members
  */
 class LobbyEventsHandler {
-  constructor(connectionManager, lobbyManager) {
+  constructor(connectionManager, lobbyManager, playerStatusManager = null) {
     this.connectionManager = connectionManager;
     this.lobbyManager = lobbyManager;
+    this.playerStatusManager = playerStatusManager;
   }
 
   /**
@@ -205,11 +206,26 @@ class LobbyEventsHandler {
         }
       }
 
-      // Sync: Add to Redis if subscribed but not in Redis
+      // Sync: Add to Redis if subscribed but not in Redis (and player is online)
       for (const client of lobbyClients) {
         if (!redisMemberIds.has(client.userId)) {
-          console.log(`Sync: Adding ${client.userId} to Redis (subscribed but missing)`);
-          await this.lobbyManager.addMember(lobbyId, client.userId, client.username, client.characterId);
+          // Check if player is actually online before adding back
+          let isOnline = true;
+          if (this.playerStatusManager) {
+            try {
+              const status = await this.playerStatusManager.getPlayerStatus(client.userId);
+              isOnline = status && status.status !== 'offline';
+            } catch (err) {
+              console.warn(`Could not verify status for ${client.userId}, assuming online`);
+            }
+          }
+          
+          if (isOnline) {
+            console.log(`Sync: Adding ${client.userId} to Redis (subscribed but missing)`);
+            await this.lobbyManager.addMember(lobbyId, client.userId, client.username, client.characterId);
+          } else {
+            console.log(`Sync: Skipping ${client.userId} - player is offline`);
+          }
         }
       }
 

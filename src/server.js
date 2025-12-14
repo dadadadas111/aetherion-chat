@@ -30,6 +30,7 @@ const playerStatusManager = new PlayerStatusManager();
 let lobbyManager = null;
 let lobbyEventsHandler = null;
 let statusUpdateHandler = null;
+let lobbyChatHandler = null;
 
 // Initialize Redis connection
 playerStatusManager.initialize().then(success => {
@@ -40,8 +41,9 @@ playerStatusManager.initialize().then(success => {
     lobbyManager = new LobbyManager(playerStatusManager.redisClient);
     
     // Initialize handlers that depend on lobby manager
-    lobbyEventsHandler = new LobbyEventsHandler(connectionManager, lobbyManager);
+    lobbyEventsHandler = new LobbyEventsHandler(connectionManager, lobbyManager, playerStatusManager);
     statusUpdateHandler = new StatusUpdateHandler(connectionManager, playerStatusManager, lobbyEventsHandler);
+    lobbyChatHandler = new LobbyChatHandler(connectionManager, lobbyManager, lobbyEventsHandler);
     
     console.log('Lobby manager and handlers initialized successfully');
   } else {
@@ -65,7 +67,6 @@ const wss = new WebSocket.Server({ server });
 // Initialize handlers that don't need Redis
 const globalChatHandler = new GlobalChatHandler(connectionManager);
 const friendChatHandler = new FriendChatHandler(connectionManager);
-const lobbyChatHandler = new LobbyChatHandler(connectionManager);
 const notificationHandler = new NotificationHandler(connectionManager);
 const lobbyInviteHandler = new LobbyInviteHandler(connectionManager);
 
@@ -179,7 +180,11 @@ wss.on('connection', (ws, req) => {
           break;
 
         case 'lobby_chat':
-          result = lobbyChatHandler.handleMessage(data, userId);
+          if (!lobbyChatHandler) {
+            result = { success: false, error: 'Lobby chat system not ready' };
+          } else {
+            result = await lobbyChatHandler.handleMessage(data, userId);
+          }
           break;
 
         case 'lobby_invite':
@@ -256,16 +261,18 @@ wss.on('connection', (ws, req) => {
       const wasInLobby = client?.lobbyId;
       const username = client?.username || userId;
       
-      // If player was in a lobby, cleanup in Redis and notify others
-      if (wasInLobby && lobbyEventsHandler) {
-        await lobbyEventsHandler.handleDisconnect(userId, wasInLobby, username);
-      }
-      
-      // Handle player going offline
+      // CRITICAL: Set offline status FIRST to prevent sync logic from adding back
       if (statusUpdateHandler) {
         await statusUpdateHandler.handlePlayerOffline(userId);
       }
+      
+      // Remove from ConnectionManager BEFORE lobby cleanup to prevent sync issues
       connectionManager.removeClient(userId);
+      
+      // Now cleanup lobby (sync won't add back because user is offline and not in ConnectionManager)
+      if (wasInLobby && lobbyEventsHandler) {
+        await lobbyEventsHandler.handleDisconnect(userId, wasInLobby, username);
+      }
     }
     console.log('WebSocket connection closed');
   });

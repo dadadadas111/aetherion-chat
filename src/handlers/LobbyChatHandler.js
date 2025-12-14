@@ -93,6 +93,8 @@ class LobbyChatHandler {
   async handleMessage(data, senderId) {
     const { lobbyId, message } = data;
 
+    console.log(`LobbyChatHandler: Received message from ${senderId} for lobby ${lobbyId}`);
+
     if (!lobbyId) {
       return { success: false, error: 'Lobby ID is required' };
     }
