@@ -14,6 +14,33 @@ class ConnectionManager {
    * Add a new client connection
    */
   addClient(ws, userId, username, characterId = null) {
+    // Check if user is already connected
+    const existingClient = this.clients.get(userId);
+    
+    if (existingClient) {
+      console.log(`User ${userId} already connected - closing old connection`);
+      
+      // Close the old WebSocket connection
+      try {
+        if (existingClient.ws.readyState === 1 || existingClient.ws.readyState === 0) {
+          existingClient.ws.send(JSON.stringify({
+            type: 'force_disconnect',
+            reason: 'New connection from same user',
+            timestamp: new Date().toISOString()
+          }));
+          existingClient.ws.close(4001, 'Duplicate connection');
+        }
+      } catch (error) {
+        console.error(`Error closing old connection for ${userId}:`, error.message);
+      }
+      
+      // Clean up old connection's lobby subscription if any
+      if (existingClient.lobbyId) {
+        this.unsubscribeFromLobby(userId);
+      }
+    }
+    
+    // Add new connection
     this.clients.set(userId, {
       ws: ws,
       userId: userId,
@@ -23,7 +50,12 @@ class ConnectionManager {
       lobbyId: null,
       connectedAt: new Date()
     });
-    console.log(`Client connected: ${userId} (${username})`);
+    
+    if (existingClient) {
+      console.log(`Client reconnected: ${userId} (${username})`);
+    } else {
+      console.log(`Client connected: ${userId} (${username})`);
+    }
   }
 
   /**
