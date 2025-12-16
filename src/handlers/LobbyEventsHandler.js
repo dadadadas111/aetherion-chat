@@ -43,6 +43,11 @@ class LobbyEventsHandler {
         await this.broadcastLobbyRoster(oldLobbyId);
       }
 
+      // Update connection manager FIRST (before Redis)
+      // This prevents race condition where broadcastLobbyRoster might remove
+      // a user that's in Redis but not yet subscribed
+      this.connectionManager.subscribeToLobby(userId, lobbyId);
+
       // Add to new lobby in Redis
       await this.lobbyManager.addMember(
         lobbyId,
@@ -50,9 +55,6 @@ class LobbyEventsHandler {
         client.username,
         client.characterId
       );
-
-      // Update connection manager
-      this.connectionManager.subscribeToLobby(userId, lobbyId);
 
       // Broadcast updated roster to new lobby members
       await this.broadcastLobbyRoster(lobbyId);
@@ -198,15 +200,9 @@ class LobbyEventsHandler {
       const redisMembers = await this.lobbyManager.getLobbyMembers(lobbyId);
       const redisMemberIds = new Set(redisMembers.map(m => m.userId));
 
-      // Sync: Remove from Redis if not subscribed
-      for (const redisMember of redisMembers) {
-        if (!subscriberIds.has(redisMember.userId)) {
-          console.log(`Sync: Removing ${redisMember.userId} from Redis (not subscribed)`);
-          await this.lobbyManager.removeMember(lobbyId, redisMember.userId);
-        }
-      }
-
-      // Sync: Add to Redis if subscribed but not in Redis (and player is online)
+      // Sync: Only ADD missing subscribers to Redis
+      // Don't remove during broadcast (too aggressive, causes race conditions)
+      // Removal happens via explicit leave/disconnect/periodic cleanup
       for (const client of lobbyClients) {
         if (!redisMemberIds.has(client.userId)) {
           // Check if player is actually online before adding back
