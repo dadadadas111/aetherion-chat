@@ -227,6 +227,14 @@ wss.on('connection', (ws, req) => {
           }
           break;
 
+        case 'lobby_avatar_change':
+          if (!lobbyEventsHandler) {
+            result = { success: false, error: 'Lobby system not ready' };
+          } else {
+            result = await lobbyEventsHandler.handleAvatarChange(data, userId);
+          }
+          break;
+
         case 'ping':
           result = { type: 'pong', timestamp: new Date().toISOString() };
           ws.send(JSON.stringify(result));

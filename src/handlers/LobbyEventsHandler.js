@@ -7,6 +7,9 @@ class LobbyEventsHandler {
     this.connectionManager = connectionManager;
     this.lobbyManager = lobbyManager;
     this.playerStatusManager = playerStatusManager;
+    
+    // Track retry timers for each lobby to ensure eventual consistency
+    this.rosterRetryTimers = new Map(); // lobbyId -> [timer1, timer2, ...]
   }
 
   /**
@@ -39,8 +42,8 @@ class LobbyEventsHandler {
         // Notify old lobby members
         this.broadcastMemberLeft(oldLobbyId, userId, client.username);
 
-        // Broadcast updated roster to old lobby
-        await this.broadcastLobbyRoster(oldLobbyId);
+        // Broadcast updated roster to old lobby with retry mechanism
+        await this.scheduleRosterRetries(oldLobbyId);
       }
 
       // Update connection manager FIRST (before Redis)
@@ -56,8 +59,8 @@ class LobbyEventsHandler {
         client.characterId
       );
 
-      // Broadcast updated roster to new lobby members
-      await this.broadcastLobbyRoster(lobbyId);
+      // Broadcast updated roster to new lobby members with retry mechanism
+      await this.scheduleRosterRetries(lobbyId);
 
       // Send current lobby settings to the new joiner after a short delay
       setTimeout(async () => {
@@ -148,8 +151,8 @@ class LobbyEventsHandler {
       // Notify others that member left
       this.broadcastMemberLeft(lobbyId, userId, username);
 
-      // Broadcast updated roster to remaining members
-      await this.broadcastLobbyRoster(lobbyId);
+      // Broadcast updated roster to remaining members with retry mechanism
+      await this.scheduleRosterRetries(lobbyId);
 
       return {
         success: true,
@@ -176,13 +179,62 @@ class LobbyEventsHandler {
       // Update in Redis
       await this.lobbyManager.updateMemberCharacter(lobbyId, userId, characterId);
 
-      // Broadcast updated roster
-      await this.broadcastLobbyRoster(lobbyId);
+      // Broadcast updated roster with retry mechanism
+      await this.scheduleRosterRetries(lobbyId);
 
       return true;
     } catch (error) {
       console.error('Error handling character change:', error);
       return false;
+    }
+  }
+
+  /**
+   * Handle avatar change in lobby
+   * Just broadcasts notification - client will refresh avatar on their end
+   */
+  async handleAvatarChange(data, userId) {
+    const { lobbyId } = data;
+
+    if (!lobbyId) {
+      return { success: false, error: 'Lobby ID is required' };
+    }
+
+    try {
+      const client = this.connectionManager.getClient(userId);
+      if (!client || client.lobbyId !== lobbyId) {
+        return { success: false, error: 'You are not in this lobby' };
+      }
+
+      // Broadcast avatar change event
+      const avatarEvent = {
+        type: 'lobby_event',
+        eventType: 'avatar_changed',
+        lobbyId: lobbyId,
+        userId: userId,
+        username: client.username,
+        timestamp: new Date().toISOString()
+      };
+
+      const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      let sentCount = 0;
+
+      lobbyClients.forEach(c => {
+        try {
+          if (c.ws.readyState === 1) {
+            c.ws.send(JSON.stringify(avatarEvent));
+            sentCount++;
+          }
+        } catch (error) {
+          console.error(`Error sending avatar change to ${c.userId}:`, error);
+        }
+      });
+
+      console.log(`Notified ${sentCount} members that ${userId} changed avatar in lobby ${lobbyId}`);
+      return { success: true, lobbyId, notified: sentCount };
+    } catch (error) {
+      console.error('Error handling avatar change:', error);
+      return { success: false, error: error.message };
     }
   }
 
@@ -347,10 +399,56 @@ class LobbyEventsHandler {
       // Notify others
       this.broadcastMemberLeft(lobbyId, userId, username);
 
-      // Broadcast updated roster
-      await this.broadcastLobbyRoster(lobbyId);
+      // Broadcast updated roster with retry mechanism
+      await this.scheduleRosterRetries(lobbyId);
     } catch (error) {
       console.error('Error handling disconnect cleanup:', error);
+    }
+  }
+
+  /**
+   * Schedule roster retries for eventual consistency
+   * Broadcasts immediately, then retries 4 more times with 2-second delays
+   */
+  async scheduleRosterRetries(lobbyId, retries = 5, delayMs = 2000) {
+    // Clear any existing retry timers for this lobby
+    this.clearRosterRetries(lobbyId);
+
+    // Broadcast immediately (first broadcast)
+    await this.broadcastLobbyRoster(lobbyId);
+
+    // Schedule additional retries
+    const timers = [];
+    for (let i = 1; i < retries; i++) {
+      const timer = setTimeout(async () => {
+        try {
+          await this.broadcastLobbyRoster(lobbyId);
+          console.log(`Roster retry ${i}/${retries - 1} for lobby ${lobbyId}`);
+        } catch (error) {
+          console.error(`Error in roster retry ${i} for lobby ${lobbyId}:`, error);
+        }
+      }, delayMs * i);
+      
+      timers.push(timer);
+    }
+
+    // Store timers for this lobby
+    this.rosterRetryTimers.set(lobbyId, timers);
+
+    // Clear timers after all retries complete
+    setTimeout(() => {
+      this.clearRosterRetries(lobbyId);
+    }, delayMs * retries);
+  }
+
+  /**
+   * Clear pending roster retry timers for a lobby
+   */
+  clearRosterRetries(lobbyId) {
+    const timers = this.rosterRetryTimers.get(lobbyId);
+    if (timers) {
+      timers.forEach(timer => clearTimeout(timer));
+      this.rosterRetryTimers.delete(lobbyId);
     }
   }
 
