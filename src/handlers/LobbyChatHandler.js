@@ -91,7 +91,8 @@ class LobbyChatHandler {
    * Handle incoming lobby chat message
    */
   async handleMessage(data, senderId) {
-    const { lobbyId, message } = data;
+    const { lobbyId, senderName, message } = data;
+    let name = senderName;
 
     console.log(`LobbyChatHandler: Received message from ${senderId} for lobby ${lobbyId}`);
 
@@ -109,7 +110,10 @@ class LobbyChatHandler {
       return { success: false, error: 'You are not subscribed to this lobby' };
     }
 
-    const senderName = senderClient.username || 'Unknown';
+    if (!senderName || senderName.trim().length === 0) {
+      name = senderClient.username || 'Unknown';
+    }
+    // const senderName = senderClient.username || 'Unknown';
 
     // Create message payload
     const messagePayload = {
