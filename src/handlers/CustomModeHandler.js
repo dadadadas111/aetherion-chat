@@ -388,16 +388,30 @@ class CustomModeHandler {
 
       const roster = await this.lobbyManager.getCustomRoster(lobbyId, hostId);
 
+      // Build a map of member characterIds from Redis as a fallback
+      const members = await this.lobbyManager.getLobbyMembers(lobbyId);
+      const memberCharMap = new Map();
+      for (const m of members) {
+        memberCharMap.set(m.userId, m.characterId || null);
+      }
+
+      // Augment roster entries with characterId (prefer live connection value)
+      const augmentedRoster = roster.map(r => {
+        const client = this.connectionManager.getClient(r.userId);
+        const characterId = client?.characterId ?? memberCharMap.get(r.userId) ?? null;
+        return { ...r, characterId };
+      });
+
       const rosterEvent = {
         type: 'custom_lobby_roster',
         eventType: 'custom_lobby_roster',
         lobbyId: lobbyId,
-        customRoster: roster,
+        customRoster: augmentedRoster,
         timestamp: new Date().toISOString()
       };
 
       this.broadcastToLobby(lobbyId, rosterEvent);
-      console.log(`[CustomMode] Broadcast custom roster for lobby ${lobbyId} (${roster.length} players)`);
+      console.log(`[CustomMode] Broadcast custom roster for lobby ${lobbyId} (${augmentedRoster.length} players)`);
     } catch (error) {
       console.error('[CustomMode] Error broadcasting custom roster:', error);
     }
@@ -413,18 +427,31 @@ class CustomModeHandler {
 
       const roster = await this.lobbyManager.getCustomRoster(lobbyId, hostId);
 
+      // Build member char map fallback
+      const members = await this.lobbyManager.getLobbyMembers(lobbyId);
+      const memberCharMap = new Map();
+      for (const m of members) {
+        memberCharMap.set(m.userId, m.characterId || null);
+      }
+
+      const augmentedRoster = roster.map(r => {
+        const client = this.connectionManager.getClient(r.userId);
+        const characterId = client?.characterId ?? memberCharMap.get(r.userId) ?? null;
+        return { ...r, characterId };
+      });
+
       const rosterEvent = {
         type: 'custom_lobby_roster',
         eventType: 'custom_lobby_roster',
         lobbyId: lobbyId,
-        customRoster: roster,
+        customRoster: augmentedRoster,
         timestamp: new Date().toISOString()
       };
 
       const client = this.connectionManager.getClient(userId);
       if (client && client.ws.readyState === 1) {
         client.ws.send(JSON.stringify(rosterEvent));
-        console.log(`[CustomMode] Sent custom roster to ${userId} in lobby ${lobbyId}`);
+        console.log(`[CustomMode] Sent custom roster to ${userId} in lobby ${lobbyId} (${augmentedRoster.length} players)`);
       }
     } catch (error) {
       console.error('[CustomMode] Error sending custom roster to client:', error);
