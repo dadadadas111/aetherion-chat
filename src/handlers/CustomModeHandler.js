@@ -406,6 +406,7 @@ class CustomModeHandler {
           teamIndex: r.teamIndex,
           slotIndex: r.slotIndex,
           isHost: isHostFlag,
+          isSpectator: !!r.isSpectator,
           characterId
         };
       });
@@ -452,6 +453,7 @@ class CustomModeHandler {
           teamIndex: r.teamIndex,
           slotIndex: r.slotIndex,
           isHost: isHostFlag,
+          isSpectator: !!r.isSpectator,
           characterId
         };
       });

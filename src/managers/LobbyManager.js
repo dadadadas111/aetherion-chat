@@ -348,6 +348,13 @@ class LobbyManager {
             { slotIndex: 1, userId: null, username: null },
             { slotIndex: 2, userId: null, username: null }
           ]
+        },
+        spectators: {
+          slots: [
+            { slotIndex: 0, userId: null, username: null },
+            { slotIndex: 1, userId: null, username: null },
+            { slotIndex: 2, userId: null, username: null }
+          ]
         }
       };
 
@@ -425,9 +432,12 @@ class LobbyManager {
 
       // Remove any existing occurrences of this user to avoid duplicates
       let existingAssignment = null;
-      for (let t = 0; t <= 1; t++) {
-        for (const slot of teams[t].slots) {
+      // check teams and spectators
+      for (const key of Object.keys(teams)) {
+        for (const slot of teams[key].slots) {
           if (slot.userId === userId) {
+            // treat numeric team keys as teamIndex, spectators will be handled accordingly
+            const t = key === 'spectators' ? 'spectators' : Number(key);
             existingAssignment = { teamIndex: t, slotIndex: slot.slotIndex };
             // clear duplicate occurrences - we'll reassign below if needed
             slot.userId = null;
@@ -460,19 +470,68 @@ class LobbyManager {
             return { success: true, teamIndex: t, slotIndex: emptySlot.slotIndex };
           }
         }
-        return { success: false, error: 'Lobby is full (6/6 players)' };
+
+        // If both teams are full, try spectator slots
+        const emptySpectator = teams.spectators.slots.find(s => s.userId === null);
+        if (emptySpectator) {
+          emptySpectator.userId = userId;
+          emptySpectator.username = username;
+          await this.setCustomTeams(lobbyId, teams);
+          return { success: true, teamIndex: 'spectators', slotIndex: emptySpectator.slotIndex };
+        }
+
+        return { success: false, error: 'Lobby is full (6 players + 3 spectators)' };
       }
 
       // Add to specific team
-      if (teamIndex !== 0 && teamIndex !== 1) {
+      if (teamIndex !== 0 && teamIndex !== 1 && teamIndex !== 'spectators') {
         return { success: false, error: 'Invalid team index' };
+      }
+
+      // Add to spectators explicitly
+      if (teamIndex === 'spectators') {
+        const emptySpec = teams.spectators.slots.find(s => s.userId === null);
+        if (!emptySpec) {
+          return { success: false, error: 'Spectator slots full' };
+        }
+        emptySpec.userId = userId;
+        emptySpec.username = username;
+        await this.setCustomTeams(lobbyId, teams);
+        return { success: true, teamIndex: 'spectators', slotIndex: emptySpec.slotIndex };
       }
 
       const team = teams[teamIndex];
       const emptySlot = team.slots.find(slot => slot.userId === null);
 
+      // If target team is full, try to push someone to spectators (kick to spectator) if available
       if (!emptySlot) {
-        return { success: false, error: `Team ${teamIndex} is full` };
+        const emptySpect = teams.spectators.slots.find(s => s.userId === null);
+        if (!emptySpect) {
+          return { success: false, error: `Team ${teamIndex} is full` };
+        }
+
+        // find a victim to move into spectator (prefer non-host)
+        const settings = await this.getLobbySettings(lobbyId);
+        const hostId = settings && settings.hostId ? settings.hostId : null;
+
+        const victimSlot = team.slots.find(s => s.userId !== null && s.userId !== hostId && s.userId !== userId);
+        if (!victimSlot) {
+          return { success: false, error: `Team ${teamIndex} is full and no eligible victim to move to spectators` };
+        }
+
+        // move victim to spectator
+        emptySpect.userId = victimSlot.userId;
+        emptySpect.username = victimSlot.username;
+        const victimId = victimSlot.userId;
+        victimSlot.userId = null;
+        victimSlot.username = null;
+
+        // place new user into freed slot
+        victimSlot.userId = userId;
+        victimSlot.username = username;
+
+        await this.setCustomTeams(lobbyId, teams);
+        return { success: true, teamIndex, slotIndex: victimSlot.slotIndex, victimMovedToSpectator: true, victimId, spectatorSlotIndex: emptySpect.slotIndex };
       }
 
       emptySlot.userId = userId;
@@ -502,16 +561,16 @@ class LobbyManager {
         return false;
       }
 
-      // Find and remove player from teams
-      for (let teamIndex = 0; teamIndex <= 1; teamIndex++) {
-        const team = teams[teamIndex];
+      // Find and remove player from teams or spectators
+      for (const key of Object.keys(teams)) {
+        const team = teams[key];
         const slot = team.slots.find(s => s.userId === userId);
-        
+
         if (slot) {
           slot.userId = null;
           slot.username = null;
           await this.setCustomTeams(lobbyId, teams);
-          console.log(`Removed ${userId} from team ${teamIndex} in lobby ${lobbyId}`);
+          console.log(`Removed ${userId} from ${key} in lobby ${lobbyId}`);
           return true;
         }
       }
@@ -571,11 +630,11 @@ class LobbyManager {
 
       // Find all occurrences of the player (sanity - remove duplicates)
       const occurrences = [];
-      for (let teamIndex = 0; teamIndex <= 1; teamIndex++) {
-        const team = teams[teamIndex];
-        for (const slot of team.slots) {
+      for (const key of Object.keys(teams)) {
+        const teamKey = key === 'spectators' ? 'spectators' : Number(key);
+        for (const slot of teams[key].slots) {
           if (slot.userId === userId) {
-            occurrences.push({ teamIndex, slotIndex: slot.slotIndex, slot });
+            occurrences.push({ teamIndex: teamKey, slotIndex: slot.slotIndex, slot, key });
           }
         }
       }
@@ -588,36 +647,76 @@ class LobbyManager {
       const first = occurrences[0];
       const username = first.slot.username;
       for (const occ of occurrences) {
-        teams[occ.teamIndex].slots[teams[occ.teamIndex].slots.findIndex(s => s.slotIndex === occ.slotIndex)].userId = null;
-        teams[occ.teamIndex].slots[teams[occ.teamIndex].slots.findIndex(s => s.slotIndex === occ.slotIndex)].username = null;
+        // locate by key used earlier
+        const key = occ.key === undefined ? occ.teamIndex : occ.key;
+        const teamSlots = teams[key].slots;
+        const idx = teamSlots.findIndex(s => s.slotIndex === occ.slotIndex);
+        if (idx !== -1) {
+          teamSlots[idx].userId = null;
+          teamSlots[idx].username = null;
+        }
       }
 
-      const currentTeam = first.teamIndex;
-      const currentSlotIndex = first.slotIndex;
+      const currentTeam = first.teamIndex; // 0 | 1 | 'spectators'
 
-      // Find opposite team
-      const targetTeam = currentTeam === 0 ? 1 : 0;
-      const targetTeamData = teams[targetTeam];
-      
-      // Find empty slot in target team
-      const emptySlot = targetTeamData.slots.find(slot => slot.userId === null);
-      
-      if (!emptySlot) {
-        return { success: false, error: 'TEAM_FULL', message: 'Target team is full' };
+      // Determine target team(s)
+      const candidateTargets = (currentTeam === 0 || currentTeam === 1)
+        ? [currentTeam === 0 ? 1 : 0]
+        : [0, 1];
+
+      const settings = await this.getLobbySettings(lobbyId);
+      const hostId = settings && settings.hostId ? settings.hostId : null;
+
+      // Try each candidate target in order
+      for (const targetTeam of candidateTargets) {
+        const targetKey = String(targetTeam);
+        const targetTeamData = teams[targetKey];
+        const emptySlot = targetTeamData.slots.find(slot => slot.userId === null);
+
+        if (emptySlot) {
+          emptySlot.userId = userId;
+          emptySlot.username = username;
+          await this.setCustomTeams(lobbyId, teams);
+          return {
+            success: true,
+            fromTeam: currentTeam,
+            toTeam: targetTeam,
+            slotIndex: emptySlot.slotIndex
+          };
+        }
+
+        // no empty slot; try to move a victim to spectator if possible
+        const emptySpect = teams.spectators.slots.find(s => s.userId === null);
+        if (emptySpect) {
+          // pick a victim who is not host and not the user
+          const victimSlot = targetTeamData.slots.find(s => s.userId !== null && s.userId !== hostId && s.userId !== userId);
+          if (victimSlot) {
+            emptySpect.userId = victimSlot.userId;
+            emptySpect.username = victimSlot.username;
+            const victimId = victimSlot.userId;
+            // free victim slot
+            victimSlot.userId = null;
+            victimSlot.username = null;
+
+            // place user into victim slot
+            victimSlot.userId = userId;
+            victimSlot.username = username;
+
+            await this.setCustomTeams(lobbyId, teams);
+            return {
+              success: true,
+              fromTeam: currentTeam,
+              toTeam: targetTeam,
+              slotIndex: victimSlot.slotIndex,
+              victimMovedToSpectator: true,
+              victimId,
+              spectatorSlotIndex: emptySpect.slotIndex
+            };
+          }
+        }
       }
 
-      // Move player into empty slot
-      emptySlot.userId = userId;
-      emptySlot.username = username;
-      
-      await this.setCustomTeams(lobbyId, teams);
-      
-      return { 
-        success: true, 
-        fromTeam: currentTeam, 
-        toTeam: targetTeam,
-        slotIndex: emptySlot.slotIndex
-      };
+      return { success: false, error: 'TEAM_FULL', message: 'No available slot in target team(s) and spectators full or no eligible victim' };
     } catch (error) {
       console.error('Error swapping player team:', error);
       return { success: false, error: error.message };
@@ -640,10 +739,11 @@ class LobbyManager {
       }
 
       const roster = [];
-      
+
+      // Teams 0 and 1
       for (let teamIndex = 0; teamIndex <= 1; teamIndex++) {
         const team = teams[teamIndex];
-        
+
         for (const slot of team.slots) {
           if (slot.userId) {
             roster.push({
@@ -651,7 +751,24 @@ class LobbyManager {
               username: slot.username,
               teamIndex: teamIndex,
               slotIndex: slot.slotIndex,
-              isHost: slot.userId === hostId
+              isHost: slot.userId === hostId,
+              isSpectator: false
+            });
+          }
+        }
+      }
+
+      // Spectators
+      if (teams.spectators && Array.isArray(teams.spectators.slots)) {
+        for (const slot of teams.spectators.slots) {
+          if (slot.userId) {
+            roster.push({
+              userId: slot.userId,
+              username: slot.username,
+              teamIndex: null,
+              slotIndex: slot.slotIndex,
+              isHost: slot.userId === hostId,
+              isSpectator: true
             });
           }
         }
