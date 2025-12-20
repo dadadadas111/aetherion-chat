@@ -550,6 +550,8 @@ class LobbyEventsHandler {
       // If switching TO custom mode, initialize team structure
       if (gameMode === 'Custom' && oldMode !== 'Custom') {
         await this.lobbyManager.initializeCustomTeams(lobbyId, userId, client.username);
+        // Ensure lobby host is recorded so roster broadcasts can mark `isHost`
+        await this.lobbyManager.setLobbyHost(lobbyId, userId);
         
         // Add all existing lobby members to custom teams
         const members = await this.lobbyManager.getLobbyMembers(lobbyId);

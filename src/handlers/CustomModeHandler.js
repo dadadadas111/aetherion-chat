@@ -385,6 +385,8 @@ class CustomModeHandler {
     try {
       const settings = await this.lobbyManager.getLobbySettings(lobbyId);
       const hostId = settings?.hostId || null;
+      console.log(`[CustomMode] Debug: settings for ${lobbyId}:`, settings);
+      console.log(`[CustomMode] Debug: resolved hostId=${hostId}`);
 
       const roster = await this.lobbyManager.getCustomRoster(lobbyId, hostId);
 
