@@ -423,6 +423,31 @@ class LobbyManager {
         return { success: false, error: 'Custom teams not initialized' };
       }
 
+      // Remove any existing occurrences of this user to avoid duplicates
+      let existingAssignment = null;
+      for (let t = 0; t <= 1; t++) {
+        for (const slot of teams[t].slots) {
+          if (slot.userId === userId) {
+            existingAssignment = { teamIndex: t, slotIndex: slot.slotIndex };
+            // clear duplicate occurrences - we'll reassign below if needed
+            slot.userId = null;
+            slot.username = null;
+          }
+        }
+      }
+
+      // If user is already assigned and caller did not request a specific team,
+      // return the existing assignment (no-op)
+      if (existingAssignment && teamIndex === null) {
+        // Restore original slot (since caller didn't request move)
+        const slot = teams[existingAssignment.teamIndex].slots.find(s => s.slotIndex === existingAssignment.slotIndex);
+        if (slot) {
+          slot.userId = userId;
+          slot.username = username;
+        }
+        return { success: true, teamIndex: existingAssignment.teamIndex, slotIndex: existingAssignment.slotIndex };
+      }
+
       // If no team specified, find first available slot
       if (teamIndex === null) {
         // Try team 0 first, then team 1
@@ -445,16 +470,16 @@ class LobbyManager {
 
       const team = teams[teamIndex];
       const emptySlot = team.slots.find(slot => slot.userId === null);
-      
+
       if (!emptySlot) {
         return { success: false, error: `Team ${teamIndex} is full` };
       }
 
       emptySlot.userId = userId;
       emptySlot.username = username;
-      
+
       await this.setCustomTeams(lobbyId, teams);
-      
+
       return { success: true, teamIndex, slotIndex: emptySlot.slotIndex };
     } catch (error) {
       console.error('Error adding player to custom team:', error);
@@ -544,24 +569,31 @@ class LobbyManager {
         return { success: false, error: 'Custom teams not initialized' };
       }
 
-      // Find player's current team
-      let currentTeam = null;
-      let currentSlot = null;
-      
+      // Find all occurrences of the player (sanity - remove duplicates)
+      const occurrences = [];
       for (let teamIndex = 0; teamIndex <= 1; teamIndex++) {
         const team = teams[teamIndex];
-        const slot = team.slots.find(s => s.userId === userId);
-        
-        if (slot) {
-          currentTeam = teamIndex;
-          currentSlot = slot;
-          break;
+        for (const slot of team.slots) {
+          if (slot.userId === userId) {
+            occurrences.push({ teamIndex, slotIndex: slot.slotIndex, slot });
+          }
         }
       }
 
-      if (currentTeam === null) {
+      if (occurrences.length === 0) {
         return { success: false, error: 'Player not found in any team' };
       }
+
+      // Use first occurrence as the current slot and clear all occurrences
+      const first = occurrences[0];
+      const username = first.slot.username;
+      for (const occ of occurrences) {
+        teams[occ.teamIndex].slots[teams[occ.teamIndex].slots.findIndex(s => s.slotIndex === occ.slotIndex)].userId = null;
+        teams[occ.teamIndex].slots[teams[occ.teamIndex].slots.findIndex(s => s.slotIndex === occ.slotIndex)].username = null;
+      }
+
+      const currentTeam = first.teamIndex;
+      const currentSlotIndex = first.slotIndex;
 
       // Find opposite team
       const targetTeam = currentTeam === 0 ? 1 : 0;
@@ -574,11 +606,7 @@ class LobbyManager {
         return { success: false, error: 'TEAM_FULL', message: 'Target team is full' };
       }
 
-      // Move player
-      const username = currentSlot.username;
-      currentSlot.userId = null;
-      currentSlot.username = null;
-      
+      // Move player into empty slot
       emptySlot.userId = userId;
       emptySlot.username = username;
       

@@ -75,10 +75,10 @@ class CustomModeHandler {
       // Broadcast updated roster
       await this.broadcastCustomRoster(lobbyId);
 
-      console.log(`${userId} swapped from team ${swapResult.fromTeam} to team ${swapResult.toTeam} in lobby ${lobbyId}`);
+      console.log(`[CustomMode] ${userId} swapped from team ${swapResult.fromTeam} to team ${swapResult.toTeam} in lobby ${lobbyId}`);
       return { success: true, ...swapResult };
     } catch (error) {
-      console.error('Error handling swap team:', error);
+      console.error('[CustomMode] Error handling swap team:', error);
       return { success: false, error: error.message };
     }
   }
@@ -136,7 +136,7 @@ class CustomModeHandler {
 
       this.broadcastToLobby(lobbyId, matchStartEvent);
 
-      console.log(`Custom match started in lobby ${lobbyId} - Team 0: ${team0Players.length}, Team 1: ${team1Players.length}`);
+      console.log(`[CustomMode] Custom match started in lobby ${lobbyId} - Team 0: ${team0Players.length}, Team 1: ${team1Players.length}`);
       return { 
         success: true, 
         lobbyId,
@@ -145,7 +145,7 @@ class CustomModeHandler {
         team1Count: team1Players.length
       };
     } catch (error) {
-      console.error('Error handling start custom match:', error);
+      console.error('[CustomMode] Error handling start custom match:', error);
       return { success: false, error: error.message };
     }
   }
@@ -179,15 +179,18 @@ class CustomModeHandler {
         return { success: false, error: 'Custom teams not initialized' };
       }
 
-      // Collect all players except host
-      const allPlayers = [];
+      // Collect all players except host (dedupe by userId to avoid duplicates)
+      const allPlayersMap = new Map();
       for (let teamIndex = 0; teamIndex <= 1; teamIndex++) {
         for (const slot of teams[teamIndex].slots) {
           if (slot.userId && slot.userId !== userId) {
-            allPlayers.push({ userId: slot.userId, username: slot.username });
+            if (!allPlayersMap.has(slot.userId)) {
+              allPlayersMap.set(slot.userId, { userId: slot.userId, username: slot.username });
+            }
           }
         }
       }
+      const allPlayers = Array.from(allPlayersMap.values());
 
       // Shuffle players
       this.shuffleArray(allPlayers);
@@ -264,10 +267,10 @@ class CustomModeHandler {
       // Broadcast updated roster
       await this.broadcastCustomRoster(lobbyId);
 
-      console.log(`Teams shuffled in lobby ${lobbyId} by ${userId}`);
+      console.log(`[CustomMode] Teams shuffled in lobby ${lobbyId} by ${userId}`);
       return { success: true, lobbyId };
     } catch (error) {
-      console.error('Error handling random shuffle:', error);
+      console.error('[CustomMode] Error handling random shuffle:', error);
       return { success: false, error: error.message };
     }
   }
@@ -335,10 +338,10 @@ class CustomModeHandler {
         hostClient.ws.send(JSON.stringify(modeEvent));
       }
 
-      console.log(`Custom room ${lobbyId} closed by host ${userId}`);
+      console.log(`[CustomMode] Custom room ${lobbyId} closed by host ${userId}`);
       return { success: true, lobbyId };
     } catch (error) {
-      console.error('Error handling close room:', error);
+      console.error('[CustomMode] Error handling close room:', error);
       return { success: false, error: error.message };
     }
   }
@@ -394,9 +397,9 @@ class CustomModeHandler {
       };
 
       this.broadcastToLobby(lobbyId, rosterEvent);
-      console.log(`Broadcast custom roster for lobby ${lobbyId} (${roster.length} players)`);
+      console.log(`[CustomMode] Broadcast custom roster for lobby ${lobbyId} (${roster.length} players)`);
     } catch (error) {
-      console.error('Error broadcasting custom roster:', error);
+      console.error('[CustomMode] Error broadcasting custom roster:', error);
     }
   }
 
@@ -421,10 +424,10 @@ class CustomModeHandler {
       const client = this.connectionManager.getClient(userId);
       if (client && client.ws.readyState === 1) {
         client.ws.send(JSON.stringify(rosterEvent));
-        console.log(`Sent custom roster to ${userId} in lobby ${lobbyId}`);
+        console.log(`[CustomMode] Sent custom roster to ${userId} in lobby ${lobbyId}`);
       }
     } catch (error) {
-      console.error('Error sending custom roster to client:', error);
+      console.error('[CustomMode] Error sending custom roster to client:', error);
     }
   }
 
@@ -442,11 +445,11 @@ class CustomModeHandler {
           sentCount++;
         }
       } catch (error) {
-        console.error(`Error broadcasting to ${client.userId}:`, error);
+        console.error(`[CustomMode] Error broadcasting to ${client.userId}:`, error);
       }
     });
 
-    console.log(`Broadcast ${event.eventType} to ${sentCount} members in lobby ${lobbyId}`);
+    console.log(`[CustomMode] Broadcast ${event.eventType} to ${sentCount} members in lobby ${lobbyId}`);
   }
 
   /**
