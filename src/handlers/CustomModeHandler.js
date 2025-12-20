@@ -544,12 +544,13 @@ class CustomModeHandler {
    */
   broadcastToLobby(lobbyId, event) {
     const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+    const payload = JSON.stringify(event);
     let sentCount = 0;
 
     lobbyClients.forEach(client => {
       try {
         if (client.ws.readyState === 1) {
-          client.ws.send(JSON.stringify(event));
+          client.ws.send(payload);
           sentCount++;
         }
       } catch (error) {

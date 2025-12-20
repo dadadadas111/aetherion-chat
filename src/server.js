@@ -128,8 +128,10 @@ wss.on('connection', (ws, req) => {
           timestamp: new Date().toISOString()
         }));
         
-        // Notify friends that this user is now online
-        await statusUpdateHandler.notifyFriendsOfStatusChange(userId, 'online');
+        // Notify friends that this user is now online (do not block auth flow)
+        if (statusUpdateHandler) {
+          statusUpdateHandler.notifyFriendsOfStatusChange(userId, 'online').catch(err => console.error('Error notifying friends:', err));
+        }
         
         console.log(`User authenticated: ${userId} (${username})`);
         return;

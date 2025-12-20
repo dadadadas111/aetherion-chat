@@ -98,13 +98,14 @@ class LobbyEventsHandler {
       }
 
       // Send current lobby settings to the new joiner after a short delay
-      setTimeout(async () => {
+      // Send current lobby settings to the new joiner immediately (non-blocking)
+      (async () => {
         try {
           const settings = await this.lobbyManager.getLobbySettings(lobbyId);
-          
+
           if (settings && Object.keys(settings).length > 0) {
             const joinerClient = this.connectionManager.getClient(userId);
-            
+
             if (joinerClient && joinerClient.ws.readyState === 1) {
               // Send current game mode if set
               if (settings.gameMode) {
@@ -151,7 +152,7 @@ class LobbyEventsHandler {
         } catch (error) {
           console.error('Error sending lobby settings to new joiner:', error);
         }
-      }, 2000); // 2 second delay
+      })();
 
       return {
         success: true,
@@ -259,6 +260,11 @@ class LobbyEventsHandler {
       const settings = await this.lobbyManager.getLobbySettings(lobbyId);
       const isCustomMode = settings && settings.gameMode === 'Custom';
 
+      // If custom mode, refresh the roster first so clients receive roster before avatar notification
+      if (isCustomMode && this.customModeHandler) {
+        await this.customModeHandler.broadcastCustomRoster(lobbyId);
+      }
+
       // Broadcast avatar change event
       const avatarEvent = {
         type: 'lobby_event',
@@ -269,24 +275,20 @@ class LobbyEventsHandler {
         timestamp: new Date().toISOString()
       };
 
+      const payload = JSON.stringify(avatarEvent);
       const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
       let sentCount = 0;
 
       lobbyClients.forEach(c => {
         try {
           if (c.ws.readyState === 1) {
-            c.ws.send(JSON.stringify(avatarEvent));
+            c.ws.send(payload);
             sentCount++;
           }
         } catch (error) {
           console.error(`Error sending avatar change to ${c.userId}:`, error);
         }
       });
-
-      // If custom mode, also refresh the roster
-      if (isCustomMode && this.customModeHandler) {
-        await this.customModeHandler.broadcastCustomRoster(lobbyId);
-      }
 
       console.log(`Notified ${sentCount} members that ${userId} changed avatar in lobby ${lobbyId}`);
       return { success: true, lobbyId, notified: sentCount };
@@ -358,10 +360,11 @@ class LobbyEventsHandler {
       // Broadcast to all subscribers
       let sentCount = 0;
 
+      const payload = JSON.stringify(rosterEvent);
       lobbyClients.forEach(client => {
         try {
           if (client.ws.readyState === 1) {
-            client.ws.send(JSON.stringify(rosterEvent));
+            client.ws.send(payload);
             sentCount++;
           }
         } catch (error) {
@@ -390,6 +393,7 @@ class LobbyEventsHandler {
       };
 
       const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
+      const payload = JSON.stringify(memberLeftEvent);
       let sentCount = 0;
 
       lobbyClients.forEach(client => {
@@ -397,7 +401,7 @@ class LobbyEventsHandler {
 
         try {
           if (client.ws.readyState === 1) {
-            client.ws.send(JSON.stringify(memberLeftEvent));
+            client.ws.send(payload);
             sentCount++;
           }
         } catch (error) {
