@@ -47,11 +47,11 @@ playerStatusManager.initialize().then(success => {
     
     // Initialize handlers that depend on lobby manager
     lobbyEventsHandler = new LobbyEventsHandler(connectionManager, lobbyManager, playerStatusManager);
-    
+
     // Set custom mode handler in lobby events handler
     lobbyEventsHandler.setCustomModeHandler(customModeHandler);
-    
-    lobbyEventsHandler = new LobbyEventsHandler(connectionManager, lobbyManager, playerStatusManager);
+    console.log('CustomModeHandler registered with LobbyEventsHandler');
+
     statusUpdateHandler = new StatusUpdateHandler(connectionManager, playerStatusManager, lobbyEventsHandler);
     lobbyChatHandler = new LobbyChatHandler(connectionManager, lobbyManager, lobbyEventsHandler);
     
