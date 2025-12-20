@@ -399,7 +399,15 @@ class CustomModeHandler {
       const augmentedRoster = roster.map(r => {
         const client = this.connectionManager.getClient(r.userId);
         const characterId = client?.characterId ?? memberCharMap.get(r.userId) ?? null;
-        return { ...r, characterId };
+        const isHostFlag = r.userId === hostId;
+        return {
+          userId: r.userId,
+          username: r.username,
+          teamIndex: r.teamIndex,
+          slotIndex: r.slotIndex,
+          isHost: isHostFlag,
+          characterId
+        };
       });
 
       const rosterEvent = {
@@ -437,7 +445,15 @@ class CustomModeHandler {
       const augmentedRoster = roster.map(r => {
         const client = this.connectionManager.getClient(r.userId);
         const characterId = client?.characterId ?? memberCharMap.get(r.userId) ?? null;
-        return { ...r, characterId };
+        const isHostFlag = r.userId === hostId;
+        return {
+          userId: r.userId,
+          username: r.username,
+          teamIndex: r.teamIndex,
+          slotIndex: r.slotIndex,
+          isHost: isHostFlag,
+          characterId
+        };
       });
 
       const rosterEvent = {
