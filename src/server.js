@@ -262,6 +262,14 @@ wss.on('connection', (ws, req) => {
           }
           break;
 
+        case 'swap_to_index':
+          if (!customModeHandler) {
+            result = { success: false, error: 'Custom mode not ready' };
+          } else {
+            result = await customModeHandler.handleSwapToIndex(data, userId);
+          }
+          break;
+
         case 'close_custom_room':
           if (!customModeHandler) {
             result = { success: false, error: 'Custom mode not ready' };

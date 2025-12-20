@@ -276,6 +276,67 @@ class CustomModeHandler {
   }
 
   /**
+   * Handle swap to specific slot index request
+   * data: { lobbyId, targetTeam, targetSlotIndex, subjectUserId? }
+   * If subjectUserId provided and sender is not subject, sender must be host.
+   */
+  async handleSwapToIndex(data, senderId) {
+    const { lobbyId, targetTeam, targetSlotIndex, subjectUserId } = data;
+
+    if (!lobbyId || (targetTeam === undefined || targetSlotIndex === undefined)) {
+      return { success: false, error: 'lobbyId, targetTeam and targetSlotIndex are required' };
+    }
+
+    try {
+      // Verify custom mode
+      if (!(await this.verifyCustomMode(lobbyId))) {
+        return { success: false, error: 'Lobby is not in custom mode' };
+      }
+
+      const client = this.connectionManager.getClient(senderId);
+      if (!client || client.lobbyId !== lobbyId) {
+        return { success: false, error: 'You are not in this lobby' };
+      }
+
+      const subjectId = subjectUserId || senderId;
+
+      // If acting on another user, only host may do so
+      if (subjectId !== senderId) {
+        const isHost = await this.verifyHost(lobbyId, senderId);
+        if (!isHost) return { success: false, error: 'UNAUTHORIZED' };
+      }
+
+      // Perform swap to index
+      const result = await this.lobbyManager.swapPlayerToSlot(lobbyId, subjectId, targetTeam, targetSlotIndex);
+
+      if (!result.success) return result;
+
+      // Broadcast an event about slot move
+      const moveEvent = {
+        type: 'slot_swapped',
+        eventType: 'slot_swapped',
+        lobbyId,
+        subjectId,
+        targetTeam,
+        targetSlotIndex,
+        result,
+        timestamp: new Date().toISOString()
+      };
+
+      this.broadcastToLobby(lobbyId, moveEvent);
+
+      // Broadcast updated roster
+      await this.broadcastCustomRoster(lobbyId);
+
+      console.log(`[CustomMode] ${senderId} swapped ${subjectId} to ${targetTeam}:${targetSlotIndex} in lobby ${lobbyId}`);
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('[CustomMode] Error handling swap to index:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Handle close custom room
    */
   async handleCloseRoom(data, userId) {
