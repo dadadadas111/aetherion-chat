@@ -8,6 +8,7 @@ A lightweight, real-time chat server for online games built with Node.js, WebSoc
 - ✅ **Friend Chat** - Private messaging with history persistence
 - ✅ **Lobby Chat** - Channel-based chat for game lobbies
 - ✅ **Lobby Events** - Real-time lobby synchronization (queue, mode changes, host migration)
+- ✅ **Custom Mode** - 6-player team-based lobbies (3v3) with advanced team management
 - ✅ **Character Selection** - Track and sync player character/skin choices in lobbies
 - ✅ **Lobby Invitations** - Invite friends to join your game
 - ✅ **Notifications** - Server-to-client push notifications
@@ -16,6 +17,20 @@ A lightweight, real-time chat server for online games built with Node.js, WebSoc
 - ✅ **REST API** - HTTP endpoints for chat history and notifications
 - ✅ **Firebase Integration** - Persistent chat history with Firestore
 - ✅ **CORS Enabled** - Works with any client origin
+
+---
+
+## Custom Mode (New!)
+
+Custom mode enables 6-player team-based lobbies with:
+- **3v3 Team Structure** - Two teams with 3 slots each
+- **Team Swapping** - Players can switch between teams
+- **Random Shuffle** - Host can randomly redistribute players
+- **Match Start Validation** - Ensures both teams have players
+- **Room Management** - Host can close room and revert to casual mode
+
+📖 **Quick Start Guide**: [CUSTOM_MODE_QUICKSTART.md](./CUSTOM_MODE_QUICKSTART.md)  
+📚 **Full Documentation**: [CUSTOM_MODE_IMPLEMENTATION.md](./CUSTOM_MODE_IMPLEMENTATION.md)
 
 ---
 

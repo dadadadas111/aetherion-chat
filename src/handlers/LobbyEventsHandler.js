@@ -3,13 +3,21 @@
  * All lobby state stored in Redis, broadcasts sync'd data to members
  */
 class LobbyEventsHandler {
-  constructor(connectionManager, lobbyManager, playerStatusManager = null) {
+  constructor(connectionManager, lobbyManager, playerStatusManager = null, customModeHandler = null) {
     this.connectionManager = connectionManager;
     this.lobbyManager = lobbyManager;
     this.playerStatusManager = playerStatusManager;
+    this.customModeHandler = customModeHandler;
     
     // Track retry timers for each lobby to ensure eventual consistency
     this.rosterRetryTimers = new Map(); // lobbyId -> [timer1, timer2, ...]
+  }
+
+  /**
+   * Set custom mode handler (for dependency injection after initialization)
+   */
+  setCustomModeHandler(customModeHandler) {
+    this.customModeHandler = customModeHandler;
   }
 
   /**
@@ -51,16 +59,43 @@ class LobbyEventsHandler {
       // a user that's in Redis but not yet subscribed
       this.connectionManager.subscribeToLobby(userId, lobbyId);
 
-      // Add to new lobby in Redis
-      await this.lobbyManager.addMember(
-        lobbyId,
-        userId,
-        client.username,
-        client.characterId
-      );
+      // Check if lobby is in custom mode
+      const settings = await this.lobbyManager.getLobbySettings(lobbyId);
+      const isCustomMode = settings && settings.gameMode === 'Custom';
 
-      // Broadcast updated roster to new lobby members with retry mechanism
-      await this.scheduleRosterRetries(lobbyId);
+      if (isCustomMode) {
+        // Add to custom mode team structure
+        const addResult = await this.lobbyManager.addPlayerToCustomTeam(lobbyId, userId, client.username);
+        
+        if (!addResult.success) {
+          // If custom teams full or error, send error response
+          return { success: false, error: addResult.error };
+        }
+
+        // Also add to regular lobby members for tracking
+        await this.lobbyManager.addMember(
+          lobbyId,
+          userId,
+          client.username,
+          client.characterId
+        );
+
+        // Broadcast custom roster
+        if (this.customModeHandler) {
+          await this.customModeHandler.broadcastCustomRoster(lobbyId);
+        }
+      } else {
+        // Regular mode - add to lobby normally
+        await this.lobbyManager.addMember(
+          lobbyId,
+          userId,
+          client.username,
+          client.characterId
+        );
+
+        // Broadcast updated roster to new lobby members with retry mechanism
+        await this.scheduleRosterRetries(lobbyId);
+      }
 
       // Send current lobby settings to the new joiner after a short delay
       setTimeout(async () => {
@@ -145,14 +180,28 @@ class LobbyEventsHandler {
       // Update connection manager
       this.connectionManager.unsubscribeFromLobby(userId);
 
+      // Check if lobby is in custom mode
+      const settings = await this.lobbyManager.getLobbySettings(lobbyId);
+      const isCustomMode = settings && settings.gameMode === 'Custom';
+
+      if (isCustomMode) {
+        // Remove from custom team structure
+        await this.lobbyManager.removePlayerFromCustomTeam(lobbyId, userId);
+      }
+
       // Remove from Redis
       await this.lobbyManager.removeMember(lobbyId, userId);
 
       // Notify others that member left
       this.broadcastMemberLeft(lobbyId, userId, username);
 
-      // Broadcast updated roster to remaining members with retry mechanism
-      await this.scheduleRosterRetries(lobbyId);
+      if (isCustomMode && this.customModeHandler) {
+        // Broadcast updated custom roster
+        await this.customModeHandler.broadcastCustomRoster(lobbyId);
+      } else {
+        // Broadcast updated roster to remaining members with retry mechanism
+        await this.scheduleRosterRetries(lobbyId);
+      }
 
       return {
         success: true,
@@ -206,6 +255,10 @@ class LobbyEventsHandler {
         return { success: false, error: 'You are not in this lobby' };
       }
 
+      // Check if lobby is in custom mode
+      const settings = await this.lobbyManager.getLobbySettings(lobbyId);
+      const isCustomMode = settings && settings.gameMode === 'Custom';
+
       // Broadcast avatar change event
       const avatarEvent = {
         type: 'lobby_event',
@@ -229,6 +282,11 @@ class LobbyEventsHandler {
           console.error(`Error sending avatar change to ${c.userId}:`, error);
         }
       });
+
+      // If custom mode, also refresh the roster
+      if (isCustomMode && this.customModeHandler) {
+        await this.customModeHandler.broadcastCustomRoster(lobbyId);
+      }
 
       console.log(`Notified ${sentCount} members that ${userId} changed avatar in lobby ${lobbyId}`);
       return { success: true, lobbyId, notified: sentCount };
@@ -393,14 +451,28 @@ class LobbyEventsHandler {
     if (!lobbyId) return;
 
     try {
+      // Check if lobby is in custom mode
+      const settings = await this.lobbyManager.getLobbySettings(lobbyId);
+      const isCustomMode = settings && settings.gameMode === 'Custom';
+
+      if (isCustomMode) {
+        // Remove from custom team structure
+        await this.lobbyManager.removePlayerFromCustomTeam(lobbyId, userId);
+      }
+
       // Remove from Redis
       await this.lobbyManager.removeMember(lobbyId, userId);
 
       // Notify others
       this.broadcastMemberLeft(lobbyId, userId, username);
 
-      // Broadcast updated roster with retry mechanism
-      await this.scheduleRosterRetries(lobbyId);
+      if (isCustomMode && this.customModeHandler) {
+        // Broadcast updated custom roster
+        await this.customModeHandler.broadcastCustomRoster(lobbyId);
+      } else {
+        // Broadcast updated roster with retry mechanism
+        await this.scheduleRosterRetries(lobbyId);
+      }
     } catch (error) {
       console.error('Error handling disconnect cleanup:', error);
     }
@@ -468,8 +540,35 @@ class LobbyEventsHandler {
         return { success: false, error: 'You are not in this lobby' };
       }
 
+      // Get current mode
+      const settings = await this.lobbyManager.getLobbySettings(lobbyId);
+      const oldMode = settings?.gameMode || 'Casual';
+
       // Update mode in Redis
       await this.lobbyManager.setLobbyMode(lobbyId, gameMode);
+
+      // If switching TO custom mode, initialize team structure
+      if (gameMode === 'Custom' && oldMode !== 'Custom') {
+        await this.lobbyManager.initializeCustomTeams(lobbyId, userId, client.username);
+        
+        // Add all existing lobby members to custom teams
+        const members = await this.lobbyManager.getLobbyMembers(lobbyId);
+        for (const member of members) {
+          if (member.userId !== userId) {
+            await this.lobbyManager.addPlayerToCustomTeam(lobbyId, member.userId, member.username);
+          }
+        }
+        
+        // Broadcast custom roster
+        if (this.customModeHandler) {
+          await this.customModeHandler.broadcastCustomRoster(lobbyId);
+        }
+      }
+
+      // If switching FROM custom mode, clear custom data
+      if (oldMode === 'Custom' && gameMode !== 'Custom') {
+        await this.lobbyManager.clearCustomMode(lobbyId);
+      }
 
       // Broadcast mode change event
       const modeEvent = {

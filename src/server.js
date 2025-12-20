@@ -18,6 +18,7 @@ const NotificationHandler = require('./handlers/NotificationHandler');
 const LobbyInviteHandler = require('./handlers/LobbyInviteHandler');
 const StatusUpdateHandler = require('./handlers/StatusUpdateHandler');
 const LobbyEventsHandler = require('./handlers/LobbyEventsHandler');
+const CustomModeHandler = require('./handlers/CustomModeHandler');
 
 // Initialize Firebase
 initializeFirebase();
@@ -29,6 +30,7 @@ const playerStatusManager = new PlayerStatusManager();
 // Handlers - will be initialized after Redis
 let lobbyManager = null;
 let lobbyEventsHandler = null;
+let customModeHandler = null;
 let statusUpdateHandler = null;
 let lobbyChatHandler = null;
 
@@ -40,7 +42,15 @@ playerStatusManager.initialize().then(success => {
     // Initialize lobby manager with Redis client
     lobbyManager = new LobbyManager(playerStatusManager.redisClient);
     
+    // Initialize custom mode handler
+    customModeHandler = new CustomModeHandler(connectionManager, lobbyManager);
+    
     // Initialize handlers that depend on lobby manager
+    lobbyEventsHandler = new LobbyEventsHandler(connectionManager, lobbyManager, playerStatusManager);
+    
+    // Set custom mode handler in lobby events handler
+    lobbyEventsHandler.setCustomModeHandler(customModeHandler);
+    
     lobbyEventsHandler = new LobbyEventsHandler(connectionManager, lobbyManager, playerStatusManager);
     statusUpdateHandler = new StatusUpdateHandler(connectionManager, playerStatusManager, lobbyEventsHandler);
     lobbyChatHandler = new LobbyChatHandler(connectionManager, lobbyManager, lobbyEventsHandler);
@@ -224,6 +234,47 @@ wss.on('connection', (ws, req) => {
             result = { success: false, error: 'Lobby system not ready' };
           } else {
             result = await lobbyEventsHandler.handleStopQueue(data, userId);
+          }
+          break;
+
+        // Custom mode events
+        case 'swap_team':
+          if (!customModeHandler) {
+            result = { success: false, error: 'Custom mode not ready' };
+          } else {
+            result = await customModeHandler.handleSwapTeam(data, userId);
+          }
+          break;
+
+        case 'start_custom_match':
+          if (!customModeHandler) {
+            result = { success: false, error: 'Custom mode not ready' };
+          } else {
+            result = await customModeHandler.handleStartCustomMatch(data, userId);
+          }
+          break;
+
+        case 'random_shuffle_teams':
+          if (!customModeHandler) {
+            result = { success: false, error: 'Custom mode not ready' };
+          } else {
+            result = await customModeHandler.handleRandomShuffle(data, userId);
+          }
+          break;
+
+        case 'close_custom_room':
+          if (!customModeHandler) {
+            result = { success: false, error: 'Custom mode not ready' };
+          } else {
+            result = await customModeHandler.handleCloseRoom(data, userId);
+          }
+          break;
+
+        case 'get_custom_roster':
+          if (!customModeHandler) {
+            result = { success: false, error: 'Custom mode not ready' };
+          } else {
+            result = await customModeHandler.handleGetCustomRoster(data, userId);
           }
           break;
 
