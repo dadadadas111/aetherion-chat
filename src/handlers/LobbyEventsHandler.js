@@ -44,14 +44,37 @@ class LobbyEventsHandler {
         // Update connection manager
         this.connectionManager.unsubscribeFromLobby(userId);
 
+        // If old lobby was in custom mode, remove player from custom teams first
+        try {
+          const oldSettings = await this.lobbyManager.getLobbySettings(oldLobbyId);
+          const oldIsCustom = oldSettings && oldSettings.gameMode === 'Custom';
+
+          if (oldIsCustom) {
+            if (this.customModeHandler && typeof this.customModeHandler.handleMemberLeft === 'function') {
+              await this.customModeHandler.handleMemberLeft(oldLobbyId, userId);
+            } else {
+              await this.lobbyManager.removePlayerFromCustomTeam(oldLobbyId, userId);
+            }
+          }
+        } catch (err) {
+          console.error(`Error during custom-mode removal for ${userId} from ${oldLobbyId}:`, err);
+        }
+
         // Remove from old lobby in Redis
         await this.lobbyManager.removeMember(oldLobbyId, userId);
 
         // Notify old lobby members
         this.broadcastMemberLeft(oldLobbyId, userId, client.username);
 
-        // Broadcast updated roster to old lobby with retry mechanism
-        await this.scheduleRosterRetries(oldLobbyId);
+        // Broadcast updated roster to old lobby using custom handler when appropriate
+        const oldSettingsAfter = await this.lobbyManager.getLobbySettings(oldLobbyId);
+        const oldWasCustom = oldSettingsAfter && oldSettingsAfter.gameMode === 'Custom';
+
+        if (oldWasCustom && this.customModeHandler) {
+          await this.customModeHandler.broadcastCustomRoster(oldLobbyId);
+        } else {
+          await this.scheduleRosterRetries(oldLobbyId);
+        }
       }
 
       // Update connection manager FIRST (before Redis)
