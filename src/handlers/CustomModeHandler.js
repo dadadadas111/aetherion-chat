@@ -114,14 +114,14 @@ class CustomModeHandler {
             const team0Players = teams[0].slots.filter(slot => slot.userId !== null);
             const team1Players = teams[1].slots.filter(slot => slot.userId !== null);
 
-            // Validate team composition
-            if (team0Players.length === 0 || team1Players.length === 0) {
-                return {
-                    success: false,
-                    error: 'INVALID_TEAM_COMPOSITION',
-                    message: 'Both teams need at least 1 player'
-                };
-            }
+            // // Validate team composition
+            // if (team0Players.length === 0 || team1Players.length === 0) {
+            //     return {
+            //         success: false,
+            //         error: 'INVALID_TEAM_COMPOSITION',
+            //         message: 'Both teams need at least 1 player'
+            //     };
+            // }
 
             // Broadcast match start event
             const matchStartEvent = {
