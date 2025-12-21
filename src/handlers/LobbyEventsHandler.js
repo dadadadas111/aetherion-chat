@@ -48,7 +48,7 @@ class LobbyEventsHandler {
         await this.lobbyManager.removeMember(oldLobbyId, userId);
 
         // Notify old lobby members
-        await this.broadcastMemberLeft(oldLobbyId, userId, client.username);
+        this.broadcastMemberLeft(oldLobbyId, userId, client.username);
 
         // Broadcast updated roster to old lobby with retry mechanism
         await this.scheduleRosterRetries(oldLobbyId);
@@ -186,15 +186,20 @@ class LobbyEventsHandler {
       const isCustomMode = settings && settings.gameMode === 'Custom';
 
       if (isCustomMode) {
-        // Remove from custom team structure
-        await this.lobbyManager.removePlayerFromCustomTeam(lobbyId, userId);
+        // Prefer delegating custom-team removal to the CustomModeHandler when available
+        if (this.customModeHandler && typeof this.customModeHandler.handleMemberLeft === 'function') {
+          await this.customModeHandler.handleMemberLeft(lobbyId, userId);
+        } else {
+          // Fallback to direct removal on the lobby manager
+          await this.lobbyManager.removePlayerFromCustomTeam(lobbyId, userId);
+        }
       }
 
       // Remove from Redis
       await this.lobbyManager.removeMember(lobbyId, userId);
 
       // Notify others that member left
-      await this.broadcastMemberLeft(lobbyId, userId, username);
+      this.broadcastMemberLeft(lobbyId, userId, username);
 
       if (isCustomMode && this.customModeHandler) {
         // Broadcast updated custom roster
@@ -380,30 +385,9 @@ class LobbyEventsHandler {
 
   /**
    * Broadcast member left event
-   * If lobby is in Custom mode, include team/slot info (if available)
    */
-  async broadcastMemberLeft(lobbyId, userId, username) {
+  broadcastMemberLeft(lobbyId, userId, username) {
     try {
-      // Determine if this lobby is custom mode and fetch assignment if so
-      let isCustomMode = false;
-      let teamIndex = null;
-      let slotIndex = null;
-
-      try {
-        const settings = await this.lobbyManager.getLobbySettings(lobbyId);
-        isCustomMode = settings && settings.gameMode === 'Custom';
-
-        if (isCustomMode) {
-          const assignment = await this.lobbyManager.getPlayerTeamAssignment(lobbyId, userId);
-          if (assignment) {
-            teamIndex = assignment.teamIndex;
-            slotIndex = assignment.slotIndex;
-          }
-        }
-      } catch (err) {
-        console.warn(`Could not determine custom mode or assignment for ${lobbyId}:`, err.message || err);
-      }
-
       const memberLeftEvent = {
         type: 'lobby_event',
         eventType: 'member_left',
@@ -412,12 +396,6 @@ class LobbyEventsHandler {
         username: username,
         timestamp: new Date().toISOString()
       };
-
-      // If custom mode and we have assignment info, include it so clients can update custom UI immediately
-      if (isCustomMode) {
-        if (teamIndex !== null) memberLeftEvent.teamIndex = teamIndex;
-        if (slotIndex !== null) memberLeftEvent.slotIndex = slotIndex;
-      }
 
       const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
       const payload = JSON.stringify(memberLeftEvent);
@@ -495,7 +473,7 @@ class LobbyEventsHandler {
       await this.lobbyManager.removeMember(lobbyId, userId);
 
       // Notify others
-      await this.broadcastMemberLeft(lobbyId, userId, username);
+      this.broadcastMemberLeft(lobbyId, userId, username);
 
       if (isCustomMode && this.customModeHandler) {
         // Broadcast updated custom roster
@@ -513,7 +491,7 @@ class LobbyEventsHandler {
    * Schedule roster retries for eventual consistency
    * Broadcasts immediately, then retries 4 more times with 2-second delays
    */
-  async scheduleRosterRetries(lobbyId, retries = 2, delayMs = 2000) {
+  async scheduleRosterRetries(lobbyId, retries = 5, delayMs = 2000) {
     // Clear any existing retry timers for this lobby
     this.clearRosterRetries(lobbyId);
 

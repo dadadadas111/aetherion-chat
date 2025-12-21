@@ -540,6 +540,21 @@ class CustomModeHandler {
     }
 
     /**
+     * Handle a member leaving when lobby is in custom mode.
+     * Removes the player from the custom team structure.
+     */
+    async handleMemberLeft(lobbyId, userId) {
+        try {
+            await this.lobbyManager.removePlayerFromCustomTeam(lobbyId, userId);
+            console.log(`[CustomMode] Removed ${userId} from custom teams in lobby ${lobbyId}`);
+            return { success: true };
+        } catch (error) {
+            console.error('[CustomMode] Error handling member left:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
      * Broadcast event to all lobby members
      */
     broadcastToLobby(lobbyId, event) {
