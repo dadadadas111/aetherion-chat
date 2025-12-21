@@ -513,35 +513,35 @@ class LobbyEventsHandler {
    * Schedule roster retries for eventual consistency
    * Broadcasts immediately, then retries 4 more times with 2-second delays
    */
-  async scheduleRosterRetries(lobbyId, retries = 5, delayMs = 2000) {
+  async scheduleRosterRetries(lobbyId, retries = 2, delayMs = 2000) {
     // Clear any existing retry timers for this lobby
-    // this.clearRosterRetries(lobbyId);
+    this.clearRosterRetries(lobbyId);
 
-    // // Broadcast immediately (first broadcast)
-    // await this.broadcastLobbyRoster(lobbyId);
+    // Broadcast immediately (first broadcast)
+    await this.broadcastLobbyRoster(lobbyId);
 
-    // // Schedule additional retries
-    // const timers = [];
-    // for (let i = 1; i < retries; i++) {
-    //   const timer = setTimeout(async () => {
-    //     try {
-    //       await this.broadcastLobbyRoster(lobbyId);
-    //       console.log(`Roster retry ${i}/${retries - 1} for lobby ${lobbyId}`);
-    //     } catch (error) {
-    //       console.error(`Error in roster retry ${i} for lobby ${lobbyId}:`, error);
-    //     }
-    //   }, delayMs * i);
+    // Schedule additional retries
+    const timers = [];
+    for (let i = 1; i < retries; i++) {
+      const timer = setTimeout(async () => {
+        try {
+          await this.broadcastLobbyRoster(lobbyId);
+          console.log(`Roster retry ${i}/${retries - 1} for lobby ${lobbyId}`);
+        } catch (error) {
+          console.error(`Error in roster retry ${i} for lobby ${lobbyId}:`, error);
+        }
+      }, delayMs * i);
       
-    //   timers.push(timer);
-    // }
+      timers.push(timer);
+    }
 
-    // // Store timers for this lobby
-    // this.rosterRetryTimers.set(lobbyId, timers);
+    // Store timers for this lobby
+    this.rosterRetryTimers.set(lobbyId, timers);
 
-    // // Clear timers after all retries complete
-    // setTimeout(() => {
-    //   this.clearRosterRetries(lobbyId);
-    // }, delayMs * retries);
+    // Clear timers after all retries complete
+    setTimeout(() => {
+      this.clearRosterRetries(lobbyId);
+    }, delayMs * retries);
   }
 
   /**
