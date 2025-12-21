@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+.git
+.github
+.env
+*.log
+test
+coverage
+npm-debug.log
+pnpm-store
+*.local
