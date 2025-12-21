@@ -48,7 +48,7 @@ class LobbyEventsHandler {
         await this.lobbyManager.removeMember(oldLobbyId, userId);
 
         // Notify old lobby members
-        this.broadcastMemberLeft(oldLobbyId, userId, client.username);
+        await this.broadcastMemberLeft(oldLobbyId, userId, client.username);
 
         // Broadcast updated roster to old lobby with retry mechanism
         await this.scheduleRosterRetries(oldLobbyId);
@@ -194,7 +194,7 @@ class LobbyEventsHandler {
       await this.lobbyManager.removeMember(lobbyId, userId);
 
       // Notify others that member left
-      this.broadcastMemberLeft(lobbyId, userId, username);
+      await this.broadcastMemberLeft(lobbyId, userId, username);
 
       if (isCustomMode && this.customModeHandler) {
         // Broadcast updated custom roster
@@ -380,9 +380,30 @@ class LobbyEventsHandler {
 
   /**
    * Broadcast member left event
+   * If lobby is in Custom mode, include team/slot info (if available)
    */
-  broadcastMemberLeft(lobbyId, userId, username) {
+  async broadcastMemberLeft(lobbyId, userId, username) {
     try {
+      // Determine if this lobby is custom mode and fetch assignment if so
+      let isCustomMode = false;
+      let teamIndex = null;
+      let slotIndex = null;
+
+      try {
+        const settings = await this.lobbyManager.getLobbySettings(lobbyId);
+        isCustomMode = settings && settings.gameMode === 'Custom';
+
+        if (isCustomMode) {
+          const assignment = await this.lobbyManager.getPlayerTeamAssignment(lobbyId, userId);
+          if (assignment) {
+            teamIndex = assignment.teamIndex;
+            slotIndex = assignment.slotIndex;
+          }
+        }
+      } catch (err) {
+        console.warn(`Could not determine custom mode or assignment for ${lobbyId}:`, err.message || err);
+      }
+
       const memberLeftEvent = {
         type: 'lobby_event',
         eventType: 'member_left',
@@ -391,6 +412,12 @@ class LobbyEventsHandler {
         username: username,
         timestamp: new Date().toISOString()
       };
+
+      // If custom mode and we have assignment info, include it so clients can update custom UI immediately
+      if (isCustomMode) {
+        if (teamIndex !== null) memberLeftEvent.teamIndex = teamIndex;
+        if (slotIndex !== null) memberLeftEvent.slotIndex = slotIndex;
+      }
 
       const lobbyClients = this.connectionManager.getLobbyClients(lobbyId);
       const payload = JSON.stringify(memberLeftEvent);
@@ -468,7 +495,7 @@ class LobbyEventsHandler {
       await this.lobbyManager.removeMember(lobbyId, userId);
 
       // Notify others
-      this.broadcastMemberLeft(lobbyId, userId, username);
+      await this.broadcastMemberLeft(lobbyId, userId, username);
 
       if (isCustomMode && this.customModeHandler) {
         // Broadcast updated custom roster
@@ -488,33 +515,33 @@ class LobbyEventsHandler {
    */
   async scheduleRosterRetries(lobbyId, retries = 5, delayMs = 2000) {
     // Clear any existing retry timers for this lobby
-    this.clearRosterRetries(lobbyId);
+    // this.clearRosterRetries(lobbyId);
 
-    // Broadcast immediately (first broadcast)
-    await this.broadcastLobbyRoster(lobbyId);
+    // // Broadcast immediately (first broadcast)
+    // await this.broadcastLobbyRoster(lobbyId);
 
-    // Schedule additional retries
-    const timers = [];
-    for (let i = 1; i < retries; i++) {
-      const timer = setTimeout(async () => {
-        try {
-          await this.broadcastLobbyRoster(lobbyId);
-          console.log(`Roster retry ${i}/${retries - 1} for lobby ${lobbyId}`);
-        } catch (error) {
-          console.error(`Error in roster retry ${i} for lobby ${lobbyId}:`, error);
-        }
-      }, delayMs * i);
+    // // Schedule additional retries
+    // const timers = [];
+    // for (let i = 1; i < retries; i++) {
+    //   const timer = setTimeout(async () => {
+    //     try {
+    //       await this.broadcastLobbyRoster(lobbyId);
+    //       console.log(`Roster retry ${i}/${retries - 1} for lobby ${lobbyId}`);
+    //     } catch (error) {
+    //       console.error(`Error in roster retry ${i} for lobby ${lobbyId}:`, error);
+    //     }
+    //   }, delayMs * i);
       
-      timers.push(timer);
-    }
+    //   timers.push(timer);
+    // }
 
-    // Store timers for this lobby
-    this.rosterRetryTimers.set(lobbyId, timers);
+    // // Store timers for this lobby
+    // this.rosterRetryTimers.set(lobbyId, timers);
 
-    // Clear timers after all retries complete
-    setTimeout(() => {
-      this.clearRosterRetries(lobbyId);
-    }, delayMs * retries);
+    // // Clear timers after all retries complete
+    // setTimeout(() => {
+    //   this.clearRosterRetries(lobbyId);
+    // }, delayMs * retries);
   }
 
   /**
