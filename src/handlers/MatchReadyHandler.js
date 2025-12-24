@@ -86,7 +86,7 @@ class MatchReadyHandler {
         // Everyone registered and ready -> set start to 10s from now (only once)
         const decidedAt = Date.now() + 10000;
         const setRes = await this.redis.set(startKey, String(decidedAt), { NX: true, EX: DEFAULT_MATCH_TTL });
-        if (setRes === 'OK') {
+        if (setRes === 'OK' && matchMode != 'Custom') {
           startAt = String(decidedAt);
           // We are the winner; trigger external match start request
           try {
