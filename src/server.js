@@ -19,6 +19,7 @@ const LobbyInviteHandler = require('./handlers/LobbyInviteHandler');
 const StatusUpdateHandler = require('./handlers/StatusUpdateHandler');
 const LobbyEventsHandler = require('./handlers/LobbyEventsHandler');
 const CustomModeHandler = require('./handlers/CustomModeHandler');
+const MatchReadyHandler = require('./handlers/MatchReadyHandler');
 
 // Initialize Firebase
 initializeFirebase();
@@ -33,6 +34,7 @@ let lobbyEventsHandler = null;
 let customModeHandler = null;
 let statusUpdateHandler = null;
 let lobbyChatHandler = null;
+let matchReadyHandler = null;
 
 // Initialize Redis connection
 playerStatusManager.initialize().then(success => {
@@ -54,6 +56,7 @@ playerStatusManager.initialize().then(success => {
 
     statusUpdateHandler = new StatusUpdateHandler(connectionManager, playerStatusManager, lobbyEventsHandler);
     lobbyChatHandler = new LobbyChatHandler(connectionManager, lobbyManager, lobbyEventsHandler);
+    matchReadyHandler = new MatchReadyHandler(connectionManager, playerStatusManager);
     
     console.log('Lobby manager and handlers initialized successfully');
   } else {
@@ -285,6 +288,22 @@ wss.on('connection', (ws, req) => {
             result = { success: false, error: 'Custom mode not ready' };
           } else {
             result = await customModeHandler.handleGetCustomRoster(data, userId);
+          }
+          break;
+
+        case 'match_register':
+          if (!matchReadyHandler) {
+            result = { success: false, error: 'Match system not ready' };
+          } else {
+            result = await matchReadyHandler.handleRegister(data, userId);
+          }
+          break;
+
+        case 'match_status':
+          if (!matchReadyHandler) {
+            result = { success: false, error: 'Match system not ready' };
+          } else {
+            result = await matchReadyHandler.handleGetStatus(data, userId);
           }
           break;
 
