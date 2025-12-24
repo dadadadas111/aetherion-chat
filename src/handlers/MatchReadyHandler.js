@@ -98,6 +98,8 @@ class MatchReadyHandler {
               map: map || 0,
               players: players.map(p => ({ userId: p.playerId, team: p.team || null }))
             };
+            // log the payload
+            console.log('Sending match start request with payload:', payload);
             await this._sendMatchStartRequest(payload);
           } catch (e) {
             console.error('Error sending match start request:', e);
