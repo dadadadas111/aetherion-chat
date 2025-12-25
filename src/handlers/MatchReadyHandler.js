@@ -43,7 +43,7 @@ class MatchReadyHandler {
 
       // Accept team from client ('A' or 'B')
       const team = (data.team || '').toString().toUpperCase();
-      const allowedTeams = ['A','B'];
+      const allowedTeams = ['A', 'B'];
 
       const entry = {
         isReady: isReady,
@@ -86,7 +86,7 @@ class MatchReadyHandler {
         // Everyone registered and ready -> set start to 10s from now (only once)
         const decidedAt = Date.now() + 10000;
         const setRes = await this.redis.set(startKey, String(decidedAt), { NX: true, EX: DEFAULT_MATCH_TTL });
-        if (setRes === 'OK' && matchMode != 'Custom') {
+        if (setRes === 'OK') {
           startAt = String(decidedAt);
           // We are the winner; trigger external match start request
           try {
@@ -100,7 +100,8 @@ class MatchReadyHandler {
             };
             // log the payload
             console.log('Sending match start request with payload:', payload);
-            await this._sendMatchStartRequest(payload);
+            if (matchMode != "Custom")
+              await this._sendMatchStartRequest(payload);
           } catch (e) {
             console.error('Error sending match start request:', e);
           }
@@ -123,7 +124,7 @@ class MatchReadyHandler {
         registeredCount,
         matchSize: currentMatchSize,
         isMatchReady: (registeredCount >= currentMatchSize && allReady),
-        matchWillStartAt: startAt ? Number(startAt) : null,
+        matchWillStartAt: (registeredCount >= currentMatchSize && allReady) ? Number(Date.now() + 10000) : startAt,
         players,
         map,
         matchMode
