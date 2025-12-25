@@ -82,6 +82,10 @@ class MatchReadyHandler {
       // Default not-ready startAt: 1 minute from now (if not decided yet)
       let startAt = await this.redis.get(startKey);
 
+      let deltaTimeTillStart = startAt ? Number(startAt) - Date.now() : null;
+
+      console.log(`[MatchReadyHandler] matchId=${matchId} registeredCount=${registeredCount}/${currentMatchSize} allReady=${allReady} startAt=${deltaTimeTillStart}`);
+
       if (registeredCount >= currentMatchSize && allReady) {
         // Everyone registered and ready -> set start to 10s from now (only once)
         const decidedAt = Date.now() + 10000;
