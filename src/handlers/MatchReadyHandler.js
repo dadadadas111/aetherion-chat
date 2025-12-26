@@ -128,7 +128,7 @@ class MatchReadyHandler {
         registeredCount,
         matchSize: currentMatchSize,
         isMatchReady: (registeredCount >= currentMatchSize && allReady),
-        matchWillStartAt: (registeredCount >= currentMatchSize && allReady) ? Number(Date.now() + 10000) : startAt,
+        matchWillStartAt: (registeredCount >= currentMatchSize && allReady) ? Number(Date.now() + 5000) : startAt,
         players,
         map,
         matchMode
