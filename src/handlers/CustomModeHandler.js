@@ -49,8 +49,13 @@ class CustomModeHandler {
                 return swapResult;
             }
 
-            // Broadcast updated roster (this is the main update clients need)
-            await this.broadcastCustomRoster(lobbyId);
+            // Broadcast updated roster instantly using returned data (no Redis re-read)
+            if (swapResult.teams && swapResult.settings) {
+                await this.broadcastCustomRosterFromData(lobbyId, swapResult.teams, swapResult.settings);
+            } else {
+                // Fallback to normal broadcast
+                await this.broadcastCustomRoster(lobbyId);
+            }
 
             console.log(`[CustomMode] ${userId} swapped from team ${swapResult.fromTeam} to team ${swapResult.toTeam} in lobby ${lobbyId}`);
             return { success: true, ...swapResult };
@@ -272,8 +277,13 @@ class CustomModeHandler {
 
             if (!result.success) return result;
 
-            // Broadcast updated roster (this is the main update clients need)
-            await this.broadcastCustomRoster(lobbyId);
+            // Broadcast updated roster instantly using returned data (no Redis re-read)
+            if (result.teams && result.settings) {
+                await this.broadcastCustomRosterFromData(lobbyId, result.teams, result.settings);
+            } else {
+                // Fallback to normal broadcast if data not returned
+                await this.broadcastCustomRoster(lobbyId);
+            }
 
             console.log(`[CustomMode] ${senderId} swapped ${subjectId} to ${targetTeam}:${targetSlotIndex} in lobby ${lobbyId}`);
             return { success: true, ...result };
@@ -383,6 +393,51 @@ class CustomModeHandler {
         } catch (error) {
             console.error('Error handling get custom roster:', error);
             return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Broadcast custom roster using pre-loaded data (instant, no Redis read)
+     */
+    async broadcastCustomRosterFromData(lobbyId, teams, settings) {
+        try {
+            const hostId = settings?.hostId || null;
+            const roster = this.lobbyManager.buildRosterFromTeams(teams, hostId);
+
+            // Get members for characterId lookup
+            const members = await this.lobbyManager.getLobbyMembers(lobbyId);
+            const memberCharMap = new Map();
+            for (const m of members) {
+                memberCharMap.set(m.userId, m.characterId || null);
+            }
+
+            // Augment roster entries with characterId
+            const augmentedRoster = roster.map(r => {
+                const client = this.connectionManager.getClient(r.userId);
+                const characterId = client?.characterId ?? memberCharMap.get(r.userId) ?? null;
+                return {
+                    userId: r.userId,
+                    username: r.username,
+                    teamIndex: r.teamIndex,
+                    slotIndex: r.slotIndex,
+                    isHost: r.isHost,
+                    isSpectator: r.isSpectator,
+                    characterId
+                };
+            });
+
+            const rosterEvent = {
+                type: 'custom_lobby_roster',
+                eventType: 'custom_lobby_roster',
+                lobbyId: lobbyId,
+                customRoster: augmentedRoster,
+                timestamp: new Date().toISOString()
+            };
+
+            this.broadcastToLobby(lobbyId, rosterEvent);
+            console.log(`[CustomMode] Broadcast custom roster for lobby ${lobbyId} (${augmentedRoster.length} players) [INSTANT]`);
+        } catch (error) {
+            console.error('[CustomMode] Error broadcasting custom roster from data:', error);
         }
     }
 

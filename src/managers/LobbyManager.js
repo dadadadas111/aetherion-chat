@@ -766,7 +766,9 @@ class LobbyManager {
             success: true,
             fromTeam: currentTeam,
             toTeam: targetTeam,
-            slotIndex: emptySlot.slotIndex
+            slotIndex: emptySlot.slotIndex,
+            teams,
+            settings
           };
         }
 
@@ -797,7 +799,9 @@ class LobbyManager {
               slotIndex: victimSlot.slotIndex,
               victimMovedToSpectator: true,
               victimId,
-              spectatorSlotIndex: emptySpect.slotIndex
+              spectatorSlotIndex: emptySpect.slotIndex,
+              teams,
+              settings
             };
           }
         }
@@ -891,7 +895,7 @@ class LobbyManager {
         targetSlot.userId = userId;
         targetSlot.username = username;
         await this.setCustomTeams(lobbyId, teams, { useLock: false });
-        return { success: true, movedTo: key, slotIndex: targetSlotIndex };
+        return { success: true, movedTo: key, slotIndex: targetSlotIndex, teams, settings };
       }
 
       // target occupied: perform swap
@@ -913,7 +917,7 @@ class LobbyManager {
 
         // Single write for both changes
         await this.setCustomTeams(lobbyId, teams, { useLock: false });
-        return { success: true, from: current.key, to: key, slotIndex: targetSlotIndex, victimMovedTo: current.key, victimId };
+        return { success: true, from: current.key, to: key, slotIndex: targetSlotIndex, victimMovedTo: current.key, victimId, teams, settings };
       }
 
       // user had no previous slot: try to move victim to first empty spectator slot
@@ -932,13 +936,56 @@ class LobbyManager {
 
       // Single write for all changes
       await this.setCustomTeams(lobbyId, teams, { useLock: false });
-      return { success: true, movedTo: key, slotIndex: targetSlotIndex, victimMovedTo: 'spectators', victimId };
+      return { success: true, movedTo: key, slotIndex: targetSlotIndex, victimMovedTo: 'spectators', victimId, teams, settings };
     } catch (error) {
       console.error('Error in swapPlayerToSlot:', error);
       return { success: false, error: error.message };
     } finally {
       await this._releaseLock(lobbyId, lock);
     }
+  }
+
+  /**
+   * Build roster from teams data (in-memory, no Redis)
+   */
+  buildRosterFromTeams(teams, hostId) {
+    const roster = [];
+
+    // Teams 0 and 1
+    for (let teamIndex = 0; teamIndex <= 1; teamIndex++) {
+      const team = teams[teamIndex];
+      if (!team || !Array.isArray(team.slots)) continue;
+      for (const slot of team.slots) {
+        if (slot && slot.userId) {
+          roster.push({
+            userId: slot.userId,
+            username: slot.username,
+            teamIndex: teamIndex,
+            slotIndex: slot.slotIndex,
+            isHost: slot.userId === hostId,
+            isSpectator: false
+          });
+        }
+      }
+    }
+
+    // Spectators
+    if (teams.spectators && Array.isArray(teams.spectators.slots)) {
+      for (const slot of teams.spectators.slots) {
+        if (slot && slot.userId) {
+          roster.push({
+            userId: slot.userId,
+            username: slot.username,
+            teamIndex: null,
+            slotIndex: slot.slotIndex,
+            isHost: slot.userId === hostId,
+            isSpectator: true
+          });
+        }
+      }
+    }
+
+    return roster;
   }
 
   /**
@@ -950,44 +997,7 @@ class LobbyManager {
     try {
       const teams = await this.getCustomTeams(lobbyId);
       if (!teams) return [];
-
-      const roster = [];
-
-      // Teams 0 and 1
-      for (let teamIndex = 0; teamIndex <= 1; teamIndex++) {
-        const team = teams[teamIndex];
-        if (!team || !Array.isArray(team.slots)) continue;
-        for (const slot of team.slots) {
-          if (slot && slot.userId) {
-            roster.push({
-              userId: slot.userId,
-              username: slot.username,
-              teamIndex: teamIndex,
-              slotIndex: slot.slotIndex,
-              isHost: slot.userId === hostId,
-              isSpectator: false
-            });
-          }
-        }
-      }
-
-      // Spectators
-      if (teams.spectators && Array.isArray(teams.spectators.slots)) {
-        for (const slot of teams.spectators.slots) {
-          if (slot && slot.userId) {
-            roster.push({
-              userId: slot.userId,
-              username: slot.username,
-              teamIndex: null,
-              slotIndex: slot.slotIndex,
-              isHost: slot.userId === hostId,
-              isSpectator: true
-            });
-          }
-        }
-      }
-
-      return roster;
+      return this.buildRosterFromTeams(teams, hostId);
     } catch (error) {
       console.error('Error getting custom roster:', error);
       return [];
