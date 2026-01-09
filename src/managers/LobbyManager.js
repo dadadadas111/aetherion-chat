@@ -12,11 +12,11 @@ class LobbyManager {
     };
 
     this.LOBBY_TTL = 3600; // 1 hour
-    this.LOCK_TTL = 3000; // 3 seconds for short critical sections
+    this.LOCK_TTL = 1000; // 1 second for fast critical sections
   }
 
   // Acquire a simple Redis lock for the given lobby. Returns lock token string or null.
-  async _acquireLock(lobbyId, ttlMs = null, retryDelay = 50, maxRetries = 10) {
+  async _acquireLock(lobbyId, ttlMs = null, retryDelay = 20, maxRetries = 15) {
     if (!this.isRedisAvailable()) return null;
     const lockKey = `lobby:custom:lock:${lobbyId}`;
     const token = `${Date.now()}-${Math.random()}`;
@@ -30,7 +30,10 @@ class LobbyManager {
       } catch (err) {
         // fall back to try again
       }
-      await new Promise(r => setTimeout(r, retryDelay));
+      // Only retry with delay if not the last attempt
+      if (i < maxRetries - 1) {
+        await new Promise(r => setTimeout(r, retryDelay));
+      }
     }
     return null;
   }
@@ -821,6 +824,10 @@ class LobbyManager {
       return { success: false, error: 'Redis not available' };
     }
 
+    // Use lock to prevent concurrent swaps
+    const lock = await this._acquireLock(lobbyId);
+    if (!lock) return { success: false, error: 'LOCK_FAILED' };
+
     try {
       const teams = await this.getCustomTeams(lobbyId);
       if (!teams) return { success: false, error: 'Custom teams not initialized' };
@@ -898,12 +905,13 @@ class LobbyManager {
 
         // move victim into user's old slot
         destSlot.userId = victimId;
-        await this.setCustomTeams(lobbyId, teams, { useLock: false });
+        destSlot.username = victimSlotUsername;
 
         // place user into target slot
         targetSlot.userId = userId;
         targetSlot.username = username;
 
+        // Single write for both changes
         await this.setCustomTeams(lobbyId, teams, { useLock: false });
         return { success: true, from: current.key, to: key, slotIndex: targetSlotIndex, victimMovedTo: current.key, victimId };
       }
@@ -919,14 +927,17 @@ class LobbyManager {
       emptySpec.username = victimSlotUsername;
 
       // place user into target slot
-      await this.setCustomTeams(lobbyId, teams, { useLock: false });
+      targetSlot.userId = userId;
       targetSlot.username = username;
 
+      // Single write for all changes
       await this.setCustomTeams(lobbyId, teams, { useLock: false });
       return { success: true, movedTo: key, slotIndex: targetSlotIndex, victimMovedTo: 'spectators', victimId };
     } catch (error) {
       console.error('Error in swapPlayerToSlot:', error);
       return { success: false, error: error.message };
+    } finally {
+      await this._releaseLock(lobbyId, lock);
     }
   }
 

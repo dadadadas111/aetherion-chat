@@ -40,16 +40,7 @@ class CustomModeHandler {
         }
 
         try {
-            // Verify client is in lobby
-            // const client = this.connectionManager.getClient(userId);
-            // if (!client || client.lobbyId !== lobbyId) {
-            //     return { success: false, error: 'You are not in this lobby' };
-            // }
-
-            // Verify custom mode
-            // if (!(await this.verifyCustomMode(lobbyId))) {
-            //     return { success: false, error: 'Lobby is not in custom mode' };
-            // }
+            const client = this.connectionManager.getClient(userId);
 
             // Perform swap
             const swapResult = await this.lobbyManager.swapPlayerTeam(lobbyId, userId);
@@ -58,22 +49,8 @@ class CustomModeHandler {
                 return swapResult;
             }
 
-            // Broadcast team swapped event
-            const swapEvent = {
-                type: 'team_swapped',
-                eventType: 'team_swapped',
-                lobbyId: lobbyId,
-                userId: userId,
-                username: client.username,
-                fromTeam: swapResult.fromTeam,
-                toTeam: swapResult.toTeam,
-                timestamp: new Date().toISOString()
-            };
-
-            // Broadcast updated roster
+            // Broadcast updated roster (this is the main update clients need)
             await this.broadcastCustomRoster(lobbyId);
-
-            this.broadcastToLobby(lobbyId, swapEvent);
 
             console.log(`[CustomMode] ${userId} swapped from team ${swapResult.fromTeam} to team ${swapResult.toTeam} in lobby ${lobbyId}`);
             return { success: true, ...swapResult };
@@ -288,45 +265,15 @@ class CustomModeHandler {
         }
 
         try {
-            // Verify custom mode
-            //   if (!(await this.verifyCustomMode(lobbyId))) {
-            //     return { success: false, error: 'Lobby is not in custom mode' };
-            //   }
-
-            //   const client = this.connectionManager.getClient(senderId);
-            //   if (!client || client.lobbyId !== lobbyId) {
-            //     return { success: false, error: 'You are not in this lobby' };
-            //   }
-
             const subjectId = subjectUserId || senderId;
-
-            // If acting on another user, only host may do so
-            //   if (subjectId !== senderId) {
-            //     const isHost = await this.verifyHost(lobbyId, senderId);
-            //     if (!isHost) return { success: false, error: 'UNAUTHORIZED' };
-            //   }
 
             // Perform swap to index
             const result = await this.lobbyManager.swapPlayerToSlot(lobbyId, subjectId, targetTeam, targetSlotIndex);
 
             if (!result.success) return result;
 
-            // Broadcast an event about slot move
-            const moveEvent = {
-                type: 'slot_swapped',
-                eventType: 'slot_swapped',
-                lobbyId,
-                subjectId,
-                targetTeam,
-                targetSlotIndex,
-                result,
-                timestamp: new Date().toISOString()
-            };
-
-            // Broadcast updated roster
+            // Broadcast updated roster (this is the main update clients need)
             await this.broadcastCustomRoster(lobbyId);
-            this.broadcastToLobby(lobbyId, moveEvent);
-
 
             console.log(`[CustomMode] ${senderId} swapped ${subjectId} to ${targetTeam}:${targetSlotIndex} in lobby ${lobbyId}`);
             return { success: true, ...result };
@@ -444,15 +391,16 @@ class CustomModeHandler {
      */
     async broadcastCustomRoster(lobbyId) {
         try {
-            const settings = await this.lobbyManager.getLobbySettings(lobbyId);
-            const hostId = settings?.hostId || null;
-            console.log(`[CustomMode] Debug: settings for ${lobbyId}:`, settings);
-            console.log(`[CustomMode] Debug: resolved hostId=${hostId}`);
+            // Fetch all data in parallel for better performance
+            const [settings, roster, members] = await Promise.all([
+                this.lobbyManager.getLobbySettings(lobbyId),
+                this.lobbyManager.getCustomRoster(lobbyId, null),
+                this.lobbyManager.getLobbyMembers(lobbyId)
+            ]);
 
-            const roster = await this.lobbyManager.getCustomRoster(lobbyId, hostId);
+            const hostId = settings?.hostId || null;
 
             // Build a map of member characterIds from Redis as a fallback
-            const members = await this.lobbyManager.getLobbyMembers(lobbyId);
             const memberCharMap = new Map();
             for (const m of members) {
                 memberCharMap.set(m.userId, m.characterId || null);
@@ -494,13 +442,16 @@ class CustomModeHandler {
      */
     async sendCustomRosterToClient(lobbyId, userId) {
         try {
-            const settings = await this.lobbyManager.getLobbySettings(lobbyId);
+            // Fetch all data in parallel for better performance
+            const [settings, roster, members] = await Promise.all([
+                this.lobbyManager.getLobbySettings(lobbyId),
+                this.lobbyManager.getCustomRoster(lobbyId, null),
+                this.lobbyManager.getLobbyMembers(lobbyId)
+            ]);
+
             const hostId = settings?.hostId || null;
 
-            const roster = await this.lobbyManager.getCustomRoster(lobbyId, hostId);
-
             // Build member char map fallback
-            const members = await this.lobbyManager.getLobbyMembers(lobbyId);
             const memberCharMap = new Map();
             for (const m of members) {
                 memberCharMap.set(m.userId, m.characterId || null);
