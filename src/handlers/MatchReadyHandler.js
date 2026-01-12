@@ -88,7 +88,7 @@ class MatchReadyHandler {
 
       if (registeredCount >= currentMatchSize && allReady) {
         // Everyone registered and ready -> set start to 10s from now (only once)
-        const decidedAt = Date.now() + 10000;
+        const decidedAt = Date.now() + 5000;
         const setRes = await this.redis.set(startKey, String(decidedAt), { NX: true, EX: DEFAULT_MATCH_TTL });
         if (setRes === 'OK') {
           startAt = String(decidedAt);
@@ -116,7 +116,7 @@ class MatchReadyHandler {
       } else {
         // Not everyone ready - ensure default start exists (1 minute) so clients see something
         if (!startAt) {
-          const defaultAt = Date.now() + 60 * 1000;
+          const defaultAt = Date.now() + 15 * 1000;
           await this.redis.set(startKey, String(defaultAt), { NX: true, EX: DEFAULT_MATCH_TTL });
           startAt = String(defaultAt);
         }
