@@ -88,7 +88,7 @@ class MatchReadyHandler {
 
       if (registeredCount >= currentMatchSize && allReady) {
         // Everyone registered and ready -> set start to 10s from now (only once)
-        const decidedAt = Date.now() + 5000;
+        const decidedAt = Date.now() + 2000;
         const setRes = await this.redis.set(startKey, String(decidedAt), { NX: true, EX: DEFAULT_MATCH_TTL });
         if (setRes === 'OK') {
           startAt = String(decidedAt);
@@ -112,11 +112,24 @@ class MatchReadyHandler {
         } else {
           // another writer may have set it; read again
           startAt = await this.redis.get(startKey);
+          // build payload
+          const payload = {
+            matchId: matchId,
+            name: data.name || `match-${matchId}`,
+            mode: metaObj.matchMode || matchMode || '',
+            map: map || 0,
+            players: players.map(p => ({ userId: p.playerId, team: p.team || null }))
+          };
+          // log the payload
+          console.log('Sending match start request with payload:', payload);
+          // can send multiple times. api supports idempotency
+          if (matchMode != "Custom")
+            await this._sendMatchStartRequest(payload);
         }
       } else {
         // Not everyone ready - ensure default start exists (1 minute) so clients see something
         if (!startAt) {
-          const defaultAt = Date.now() + 15 * 1000;
+          const defaultAt = Date.now() + 30 * 1000;
           await this.redis.set(startKey, String(defaultAt), { NX: true, EX: DEFAULT_MATCH_TTL });
           startAt = String(defaultAt);
         }
